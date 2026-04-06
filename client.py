@@ -12,11 +12,11 @@ from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 from openenv.core.env_server.types import State
 
-from .models import HackathonAction, HackathonObservation
+from .models import LogiChainAction, LogiChainObservation
 
 
 class HackathonEnv(
-    EnvClient[HackathonAction, HackathonObservation, State]
+    EnvClient[LogiChainAction, LogiChainObservation, State]
 ):
     """
     Client for the Hackathon Env Environment.
@@ -31,7 +31,7 @@ class HackathonEnv(
         ...     result = client.reset()
         ...     print(result.observation.echoed_message)
         ...
-        ...     result = client.step(HackathonAction(message="Hello!"))
+        ...     result = client.step(LogiChainAction(message="Hello!"))
         ...     print(result.observation.echoed_message)
 
     Example with Docker:
@@ -39,17 +39,17 @@ class HackathonEnv(
         >>> client = HackathonEnv.from_docker_image("hackathon_env-env:latest")
         >>> try:
         ...     result = client.reset()
-        ...     result = client.step(HackathonAction(message="Test"))
+        ...     result = client.step(LogiChainAction(message="Test"))
         ... finally:
         ...     client.close()
     """
 
-    def _step_payload(self, action: HackathonAction) -> Dict:
+    def _step_payload(self, action: LogiChainAction) -> Dict:
         """
-        Convert HackathonAction to JSON payload for step message.
+        Convert LogiChainAction to JSON payload for step message.
 
         Args:
-            action: HackathonAction instance
+            action: LogiChainAction instance
 
         Returns:
             Dictionary representation suitable for JSON encoding
@@ -58,18 +58,18 @@ class HackathonEnv(
             "message": action.message,
         }
 
-    def _parse_result(self, payload: Dict) -> StepResult[HackathonObservation]:
+    def _parse_result(self, payload: Dict) -> StepResult[LogiChainObservation]:
         """
-        Parse server response into StepResult[HackathonObservation].
+        Parse server response into StepResult[LogiChainObservation].
 
         Args:
             payload: JSON response data from server
 
         Returns:
-            StepResult with HackathonObservation
+            StepResult with LogiChainObservation
         """
         obs_data = payload.get("observation", {})
-        observation = HackathonObservation(
+        observation = LogiChainObservation(
             echoed_message=obs_data.get("echoed_message", ""),
             message_length=obs_data.get("message_length", 0),
             done=payload.get("done", False),

@@ -7,7 +7,7 @@
 """
 FastAPI application for the Hackathon Env Environment.
 
-This module creates an HTTP server that exposes the HackathonEnvironment
+This module creates an HTTP server that exposes the LogiChainEnvironment
 over HTTP and WebSocket endpoints, compatible with EnvClient.
 
 Endpoints:
@@ -36,18 +36,18 @@ except Exception as e:  # pragma: no cover
     ) from e
 
 try:
-    from ..models import HackathonAction, HackathonObservation
-    from .hackathon_env_environment import HackathonEnvironment
+    from ..models import LogiChainAction, LogiChainObservation
+    from .hackathon_env_environment import LogiChainEnvironment
 except ModuleNotFoundError:
-    from models import HackathonAction, HackathonObservation
-    from server.hackathon_env_environment import HackathonEnvironment
+    from models import LogiChainAction, LogiChainObservation
+    from server.hackathon_env_environment import LogiChainEnvironment
 
 
 # Create the app with web interface and README integration
 app = create_app(
-    HackathonEnvironment,
-    HackathonAction,
-    HackathonObservation,
+    LogiChainEnvironment,
+    LogiChainAction,
+    LogiChainObservation,
     env_name="hackathon_env",
     max_concurrent_envs=1,  # increase this number to allow more concurrent WebSocket sessions
 )
