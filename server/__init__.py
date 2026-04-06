@@ -6,6 +6,6 @@
 
 """Hackathon Env environment server components."""
 
-from .hackathon_env_environment import HackathonEnvironment
+from .hackathon_env_environment import LogiChainEnvironment
 
-__all__ = ["HackathonEnvironment"]
+__all__ = ["LogiChainEnvironment"]

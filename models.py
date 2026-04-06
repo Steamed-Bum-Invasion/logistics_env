@@ -1,27 +1,44 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
-
-"""
-Data models for the Hackathon Env Environment.
-
-The hackathon_env environment is a simple test environment that echoes back messages.
-"""
-
-from openenv.core.env_server.types import Action, Observation
-from pydantic import Field
+from typing import List, Optional, Dict, Any
+from openenv.core.env_server import Action, Observation, State
 
 
-class HackathonAction(Action):
-    """Action for the Hackathon Env environment - just a message to echo."""
+class LogiChainAction(Action):
+    """
+    Batched action (action economy).
+    Each step contains a list of atomic tool-like operations.
+    """
 
-    message: str = Field(..., description="Message to echo back")
+    actions: List[Dict[str, Any]]  # each dict = atomic action
 
 
-class HackathonObservation(Observation):
-    """Observation from the Hackathon Env environment - the echoed message."""
+class LogiChainObservation(Observation):
+    """
+    Messy ERP-style observation.
+    """
 
-    echoed_message: str = Field(default="", description="The echoed message")
-    message_length: int = Field(default=0, description="Length of the echoed message")
+    dashboard_text: str
+    alerts: List[str]
+    available_actions: List[str]
+    remaining_actions: int
+
+
+class LogiChainState(State):
+    """
+    Ground truth (not fully exposed to agent).
+    """
+
+    time_step: int = 0
+    max_steps: int = 50
+
+    graph: Dict[str, Dict[str, int]] = {}
+
+    drivers: Dict[str, Dict[str, Any]] = {}
+    orders: Dict[str, Dict[str, Any]] = {}
+
+    traffic: Dict[str, float] = {}
+
+    metrics: Dict[str, int] = {
+        "completed": 0,
+        "failed": 0,
+        "on_time": 0,
+    }
