@@ -10,10 +10,11 @@ Network Graph for Logistics Chain Simulation.
 A realistic city-style network with warehouses, delivery zones, and roads.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from random import Random
 from typing import Dict, List, Optional, Tuple
+
 import networkx as nx
-from random import random, choice, randint
 
 
 @dataclass
@@ -44,9 +45,7 @@ class NetworkGraph:
     """
 
     def __init__(self, seed: Optional[int] = None):
-        self._rng = random if seed is None else __import__("random")
-        if seed is not None:
-            self._rng.seed(seed)
+        self._rng = Random(seed)
 
         self.nodes: Dict[str, Node] = {}
         self.roads: Dict[Tuple[str, str], Road] = {}
@@ -58,7 +57,7 @@ class NetworkGraph:
         self._generate_traffic()
         self._precompute_all_pairs()
 
-    def _build_network(self):
+    def _build_network(self) -> None:
         nodes = [
             Node("HUB", "hub", "Central Distribution Hub", 0, 0),
             Node("W1", "warehouse", "Warehouse Alpha", -3, 2),
@@ -76,10 +75,11 @@ class NetworkGraph:
 
         for node in nodes:
             self.nodes[node.node_id] = node
-            self._graph.add_node(node.node_id, **{
-                "node_type": node.node_type,
-                "name": node.name,
-            })
+            self._graph.add_node(
+                node.node_id,
+                node_type=node.node_type,
+                name=node.name,
+            )
 
         edges = [
             ("HUB", "W1", 8, 20, "arterial"),
@@ -103,8 +103,8 @@ class NetworkGraph:
         ]
 
         road_names = [
-            "Main St", "Oak Ave", " Elm Blvd", "Park Dr", "Commerce Way",
-            "Industrial Rd", "Market St", " Harbor View", "Center St", "North Ave",
+            "Main St", "Oak Ave", "Elm Blvd", "Park Dr", "Commerce Way",
+            "Industrial Rd", "Market St", "Harbor View", "Center St", "North Ave",
         ]
 
         for i, (u, v, dist, cap, rtype) in enumerate(edges):
@@ -112,12 +112,15 @@ class NetworkGraph:
             self.roads[(u, v)] = Road(name, dist, cap, rtype)
             self.roads[(v, u)] = Road(name, dist, cap, rtype)
 
-            self._graph.add_edge(u, v, distance=dist, road_type=rtype, capacity=cap)
-            self._graph.add_edge(v, u, distance=dist, road_type=rtype, capacity=cap)
+            self._graph.add_edge(
+                u, v, distance=dist, road_type=rtype, capacity=cap
+            )
+            self._graph.add_edge(
+                v, u, distance=dist, road_type=rtype, capacity=cap
+            )
 
-    def _generate_traffic(self):
+    def _generate_traffic(self) -> None:
         for (u, v), road in self.roads.items():
-            base = 1.0
             if road.road_type == "highway":
                 base = self._rng.choice([0.8, 0.9, 1.0, 1.1])
             elif road.road_type == "arterial":
@@ -126,7 +129,7 @@ class NetworkGraph:
                 base = self._rng.choice([1.0, 1.0, 1.2, 1.5, 2.0])
             self.traffic[(u, v)] = base
 
-    def _precompute_all_pairs(self):
+    def _precompute_all_pairs(self) -> None:
         for node_a in self.nodes:
             for node_b in self.nodes:
                 if node_a != node_b:
@@ -143,7 +146,9 @@ class NetworkGraph:
 
         try:
             path = nx.dijkstra_path(self._graph, start, end, weight=self._edge_weight)
-            cost = sum(self._edge_weight(u, v) for u, v in zip(path[:-1], path[1:]))
+            cost = sum(
+                self._edge_weight(u, v) for u, v in zip(path[:-1], path[1:])
+            )
             return int(cost), path
         except (nx.NetworkXNoPath, nx.NodeNotFound):
             return 9999, []
@@ -153,12 +158,14 @@ class NetworkGraph:
         traffic = self.traffic.get((u, v), 1.0)
         return base * traffic
 
-    def update_traffic(self, node: Optional[str] = None, multiplier: float = 1.5):
+    def update_traffic(
+        self, node: Optional[str] = None, multiplier: float = 1.5
+    ) -> None:
         if node is None:
             for key in self.traffic:
                 self.traffic[key] *= multiplier
         else:
-            for (u, v), road in self.roads.items():
+            for (u, v) in self.roads:
                 if u == node:
                     self.traffic[(u, v)] *= multiplier
 

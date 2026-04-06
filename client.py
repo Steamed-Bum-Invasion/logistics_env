@@ -26,54 +26,27 @@ class HackathonEnv(
     Each client instance has its own dedicated environment session on the server.
 
     Example:
-        >>> # Connect to a running server
         >>> with HackathonEnv(base_url="http://localhost:8000") as client:
         ...     result = client.reset()
-        ...     print(result.observation.echoed_message)
+        ...     print(result.observation.dashboard_text)
         ...
-        ...     result = client.step(LogiChainAction(message="Hello!"))
-        ...     print(result.observation.echoed_message)
-
-    Example with Docker:
-        >>> # Automatically start container and connect
-        >>> client = HackathonEnv.from_docker_image("hackathon_env-env:latest")
-        >>> try:
-        ...     result = client.reset()
-        ...     result = client.step(LogiChainAction(message="Test"))
-        ... finally:
-        ...     client.close()
+        ...     result = client.step(LogiChainAction(type="call_tool", tool_name="query_network"))
+        ...     print(result.observation.tool_result)
     """
 
     def _step_payload(self, action: LogiChainAction) -> Dict:
-        """
-        Convert LogiChainAction to JSON payload for step message.
-
-        Args:
-            action: LogiChainAction instance
-
-        Returns:
-            Dictionary representation suitable for JSON encoding
-        """
-        return {
-            "message": action.message,
-        }
+        return action.model_dump()
 
     def _parse_result(self, payload: Dict) -> StepResult[LogiChainObservation]:
-        """
-        Parse server response into StepResult[LogiChainObservation].
-
-        Args:
-            payload: JSON response data from server
-
-        Returns:
-            StepResult with LogiChainObservation
-        """
         obs_data = payload.get("observation", {})
         observation = LogiChainObservation(
-            echoed_message=obs_data.get("echoed_message", ""),
-            message_length=obs_data.get("message_length", 0),
+            dashboard_text=obs_data.get("dashboard_text", ""),
+            alerts=obs_data.get("alerts", []),
+            available_tools=obs_data.get("available_tools", []),
+            episode_id=obs_data.get("episode_id", ""),
             done=payload.get("done", False),
             reward=payload.get("reward"),
+            remaining_actions=obs_data.get("remaining_actions", 3),
             metadata=obs_data.get("metadata", {}),
         )
 
@@ -84,15 +57,6 @@ class HackathonEnv(
         )
 
     def _parse_state(self, payload: Dict) -> State:
-        """
-        Parse server response into State object.
-
-        Args:
-            payload: JSON response from state request
-
-        Returns:
-            State object with episode_id and step_count
-        """
         return State(
             episode_id=payload.get("episode_id"),
             step_count=payload.get("step_count", 0),

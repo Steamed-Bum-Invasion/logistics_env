@@ -5,125 +5,495 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-Hackathon Env Environment Implementation.
+LogiChain Environment — OpenEnv Environment implementation.
 
+Tool dispatch is delegated to an internal _LogiChainMCPDelegate (MCPEnvironment)
+to retain FastMCP schema generation and MCP-level argument validation.
+LogiChainEnvironment controls reward computation and returns LogiChainToolObservation
+— a plain Pydantic model — so the reward field survives the WebSocket
+serialization round-trip intact.
 """
 
-from random import Random, choice
+import uuid
 from typing import Any, Dict, List, Optional
-from uuid import uuid4
 
+from fastmcp import FastMCP
 from openenv.core.env_server.interfaces import Environment
-
-from .network_graph import NetworkGraph
+from openenv.core.env_server.mcp_environment import MCPEnvironment
+from openenv.core.env_server.mcp_types import (
+    CallToolAction,
+    CallToolObservation,
+    ListToolsAction,
+    ListToolsObservation,
+)
+from openenv.core.env_server.types import Observation
 
 try:
-    from ..models import LogiChainAction, LogiChainObservation, LogiChainState
+    from ..models import (
+        AVAILABLE_TOOLS,
+        LogiChainAction,
+        LogiChainState,
+        LogiChainObservation,
+        LogiChainToolObservation,
+    )
+    from .network_graph import NetworkGraph
 except ImportError:
-    from models import LogiChainAction, LogiChainObservation, LogiChainState
+    from models import (
+        AVAILABLE_TOOLS,
+        LogiChainAction,
+        LogiChainState,
+        LogiChainObservation,
+        LogiChainToolObservation,
+    )
+    from server.network_graph import NetworkGraph
+
+
+class _LogiChainMCPDelegate(MCPEnvironment):
+    """
+    Thin MCPEnvironment wrapper that holds the FastMCP server.
+
+    Provides _handle_call_tool() and _handle_list_tools() to
+    LogiChainEnvironment without any reward logic.
+    """
+
+    def reset(self, **kwargs: Any) -> Observation:  # type: ignore[override]
+        return Observation(done=False, reward=0.0)
+
+    def _step_impl(self, action: Action, **kwargs: Any) -> Observation:
+        return Observation(done=False, reward=0.0)
+
+    @property
+    def state(self) -> LogiChainState:
+        return LogiChainState()
 
 
 class LogiChainEnvironment(Environment):
-    SUPPORTS_CONCURRENT_SESSIONS = True
+    """
+    Logistics chain management environment.
+
+    The agent manages a fleet of drivers delivering orders across a network.
+    New orders arrive each shift. The agent must assign drivers, route them,
+    and handle delays/escalations.
+
+    Tools:
+        assign_order: Assign a pending order to a driver
+        reroute_driver: Reroute a driver to their order's dropoff
+        delay_order: Extend an order's deadline by 3 steps
+        escalate_order: Escalate an order (extend deadline by 5, costs more)
+        advance_shift: Advance time, process deliveries, spawn new orders
+        query_driver: Get driver status and location
+        query_order: Get order status and details
+        query_network: Get network topology and traffic info
+    """
+
+    SUPPORTS_CONCURRENT_SESSIONS: bool = True
 
     def __init__(self):
-        self._state = LogiChainState()
-        self._alerts: List[str] = []
-        self._last_reward = 0.0
         self._network: Optional[NetworkGraph] = None
-        # HACK: for some reason i wasnt getting random.seed(), so used Random as a hack
-        self._rng = Random()
+        self._drivers: Dict[str, Dict[str, Any]] = {}
+        self._orders: Dict[str, Dict[str, Any]] = {}
+        self._alerts: List[str] = []
+        self._step_count = 0
+        self._actions_remaining = 3
+        self._rng = __import__("random").Random()
+        self._state = LogiChainState()
 
-    # ---------------------------
-    # RESET
-    # ---------------------------
-    def reset(self, seed=None, episode_id=None, **kwargs) -> LogiChainObservation:
+        mcp = FastMCP("logichain_env")
+
+        @mcp.tool
+        def assign_order(order_id: str, driver_id: str) -> str:
+            """
+            Assign a pending order to a driver.
+
+            Args:
+                order_id: Order identifier (e.g. 'O0', 'O1'). Use query_order to see valid IDs.
+                driver_id: Driver identifier (e.g. 'D0', 'D1'). Use query_driver to see valid IDs.
+
+            Returns:
+                Confirmation with route info, or error if order/driver invalid
+            """
+            return self._assign_order_impl(order_id, driver_id)
+
+        @mcp.tool
+        def reroute_driver(driver_id: str) -> str:
+            """
+            Reroute a driver to their assigned order's dropoff location.
+
+            Args:
+                driver_id: Driver identifier. Use query_driver to see valid IDs.
+
+            Returns:
+                Updated route info, or error if driver has no orders
+            """
+            return self._reroute_driver_impl(driver_id)
+
+        @mcp.tool
+        def delay_order(order_id: str) -> str:
+            """
+            Extend an order's deadline by 3 steps.
+
+            Args:
+                order_id: Order identifier. Use query_order to see valid IDs.
+
+            Returns:
+                Confirmation with new deadline, or error if order invalid
+            """
+            return self._delay_order_impl(order_id)
+
+        @mcp.tool
+        def escalate_order(order_id: str) -> str:
+            """
+            Escalate an order with priority handling (extend deadline by 5 steps).
+
+            Args:
+                order_id: Order identifier. Use query_order to see valid IDs.
+
+            Returns:
+                Confirmation with new deadline, or error if order invalid
+            """
+            return self._escalate_order_impl(order_id)
+
+        @mcp.tool
+        def advance_shift() -> str:
+            """
+            Advance the simulation by one shift.
+
+            Processes driver movement, deliveries, and spawns new orders.
+            Resets your action budget for the next shift.
+            Unspent actions are lost — no rollover.
+
+            Returns:
+                Shift summary report with delivery results and new orders
+            """
+            return self._advance_shift_impl()
+
+        @mcp.tool
+        def query_driver(driver_id: str) -> str:
+            """
+            Get detailed status of a driver.
+
+            Args:
+                driver_id: Driver identifier (e.g. 'D0', 'D1', 'D2', 'D3', 'D4')
+
+            Returns:
+                Driver status including location, route, assigned orders, and ETA
+            """
+            return self._query_driver_impl(driver_id)
+
+        @mcp.tool
+        def query_order(order_id: str) -> str:
+            """
+            Get detailed status of an order.
+
+            Args:
+                order_id: Order identifier (e.g. 'O0', 'O1'). Check dashboard for valid IDs.
+
+            Returns:
+                Order details including pickup, dropoff, deadline, and current status
+            """
+            return self._query_order_impl(order_id)
+
+        @mcp.tool
+        def query_network() -> str:
+            """
+            Get network topology and current traffic conditions.
+
+            Returns:
+                Network map with nodes, connections, and traffic multipliers
+            """
+            return self._query_network_impl()
+
+        super().__init__()
+        self._mcp_env = _LogiChainMCPDelegate(mcp)
+
+    # ── OpenEnv Interface ──────────────────────────────────────────────────
+
+    def reset(
+        self,
+        seed: Optional[int] = None,
+        episode_id: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Observation:
         if seed is not None:
             self._rng.seed(seed)
 
         self._alerts = []
+        self._step_count = 0
+        self._actions_remaining = 3
 
         self._network = NetworkGraph(seed=seed)
+        self._drivers = self._spawn_drivers(5)
+        self._orders = self._generate_orders(10)
 
-        self._state = LogiChainState(
-            episode_id=episode_id or str(uuid4()),
-            step_count=0,
-            time_step=0,
-            max_steps=50,
-            graph=self._serialize_graph(),
-            drivers=self._spawn_drivers(5),
-            orders=self._generate_orders(10),
-            traffic=self._serialize_traffic(),
-            metrics={"completed": 0, "failed": 0, "on_time": 0},
-        )
-
-        return self._build_observation(remaining_actions=self._get_action_budget())
-
-    def _serialize_graph(self) -> Dict[str, Dict[str, int]]:
-        serialized = {}
-        for node_id in self._network.get_all_nodes():
-            serialized[node_id] = {}
-            for neighbor in self._network.get_neighbors(node_id):
-                road = self._network.get_road(node_id, neighbor)
-                if road:
-                    serialized[node_id][neighbor] = road.distance
-        return serialized
-
-    def _serialize_traffic(self) -> Dict[str, float]:
-        return {f"{k[0]}->{k[1]}": v for k, v in self._network.traffic.items()}
-
-    # ---------------------------
-    # STEP
-    # ---------------------------
-    def step(self, action: LogiChainAction, **kwargs) -> LogiChainObservation:
-        self._alerts = []
-        reward = 0.0
-
-        budget = self._get_action_budget()
-        actions = action.actions[:budget]
-
-        if len(action.actions) > budget:
-            reward -= 0.2 * (len(action.actions) - budget)
-
-        for a in actions:
-            valid, r = self._apply_atomic_action(a)
-            reward += r
-
-        reward -= 0.02 * len(actions)
-
-        self._advance_time()
-        self._update_drivers()
-        self._update_orders()
-
-        self._inject_events()
-
-        reward += self._compute_delivery_rewards()
-
-        done = self._is_done()
-
-        self._last_reward = reward
+        ep_id = episode_id or str(uuid.uuid4())
 
         return LogiChainObservation(
-            done=done,
-            reward=reward,
             dashboard_text=self._render_dashboard(),
-            alerts=self._alerts,
-            available_actions=self._available_actions(),
-            remaining_actions=self._get_action_budget(),
+            alerts=list(self._alerts),
+            available_tools=list(AVAILABLE_TOOLS),
+            episode_id=ep_id,
+            done=False,
+            reward=0.0,
+            remaining_actions=self._actions_remaining,
         )
 
-    # ---------------------------
-    # STATE
-    # ---------------------------
+    def step(
+        self,
+        action: LogiChainAction,
+        timeout_s: Optional[float] = None,
+        **kwargs: Any,
+    ) -> Observation:
+        self._step_count += 1
+
+        if action.type == "list_tools":
+            return self._mcp_env._handle_list_tools()
+
+        if action.type == "call_tool":
+            call_action = CallToolAction(
+                tool_name=action.tool_name, arguments=action.arguments
+            )
+            return self._handle_call_tool(call_action, timeout_s=timeout_s)
+
+        return LogiChainToolObservation(
+            done=False,
+            reward=0.0,
+            tool_name="",
+            tool_result="",
+            error_msg=f"Unknown action type: {action.type}. Use 'call_tool' or 'list_tools'.",
+            alerts=list(self._alerts),
+            available_tools=list(AVAILABLE_TOOLS),
+            remaining_actions=self._actions_remaining,
+        )
+
+    def _handle_call_tool(
+        self,
+        action: CallToolAction,
+        timeout_s: Optional[float] = None,
+    ) -> LogiChainToolObservation:
+        """
+        Dispatch a CallToolAction via the internal MCPEnvironment, compute
+        reward, and return a LogiChainToolObservation with a plain float reward.
+        """
+        call_obs: CallToolObservation = self._mcp_env._handle_call_tool(
+            action, timeout_s=timeout_s
+        )
+        result_text = self._extract_result_text(call_obs)
+        is_error = (call_obs.error is not None) or result_text.startswith("ERROR")
+
+        if action.tool_name == "advance_shift":
+            reward = self._compute_shift_reward()
+            done = self._is_done()
+        else:
+            reward = self._shaping_reward(action.tool_name, result_text, is_error)
+            done = False
+
+        error_msg: Optional[str] = None
+        if call_obs.error is not None:
+            err = call_obs.error
+            error_msg = err.message if hasattr(err, "message") else str(err)
+
+        return LogiChainToolObservation(
+            tool_name=action.tool_name,
+            tool_result=result_text,
+            error_msg=error_msg,
+            done=done,
+            reward=reward,
+            alerts=list(self._alerts),
+            available_tools=list(AVAILABLE_TOOLS),
+            remaining_actions=self._actions_remaining,
+        )
+
+    @staticmethod
+    def _extract_result_text(call_obs: CallToolObservation) -> str:
+        """Extract plain text from a CallToolObservation."""
+        if call_obs.error is not None:
+            err = call_obs.error
+            msg = err.message if hasattr(err, "message") else str(err)
+            return f"ERROR: {msg}"
+
+        r = call_obs.result
+        if r is None:
+            return ""
+        if hasattr(r, "data") and r.data is not None:
+            return str(r.data)
+        if hasattr(r, "content") and r.content:
+            first = r.content[0]
+            return first.text if hasattr(first, "text") else str(first)
+        return str(r)
+
     @property
     def state(self) -> LogiChainState:
-        return self._state
+        pending = sum(1 for o in self._orders.values() if o["status"] == "pending")
+        in_transit = sum(
+            1
+            for o in self._orders.values()
+            if o["status"] in ("assigned", "in_transit")
+        )
+        delivered = sum(1 for o in self._orders.values() if o["status"] == "delivered")
+        failed = sum(1 for o in self._orders.values() if o["status"] == "failed")
+        on_time = sum(
+            1
+            for o in self._orders.values()
+            if o["status"] == "delivered" and o.get("delivered", 999) <= o["deadline"]
+        )
 
-    # ===========================
-    # DRIVERS
-    # ===========================
+        return LogiChainState(
+            episode_id=getattr(self, "_episode_id", ""),
+            step_count=self._step_count,
+            time_step=self._state.time_step,
+            max_steps=self._state.max_steps,
+            actions_remaining=self._actions_remaining,
+            orders_pending=pending,
+            orders_in_transit=in_transit,
+            orders_delivered=delivered,
+            orders_failed=failed,
+            on_time_deliveries=on_time,
+        )
 
-    def _spawn_drivers(self, n) -> Dict[str, Dict[str, Any]]:
+    # ── Tool Implementations ───────────────────────────────────────────────
+
+    def _assign_order_impl(self, order_id: str, driver_id: str) -> str:
+        if order_id not in self._orders:
+            return f"ERROR: Order '{order_id}' not found"
+        if driver_id not in self._drivers:
+            return f"ERROR: Driver '{driver_id}' not found"
+
+        order = self._orders[order_id]
+        driver = self._drivers[driver_id]
+
+        if order["status"] != "pending":
+            return (
+                f"ERROR: Order '{order_id}' is not pending (status: {order['status']})"
+            )
+
+        cost, path = self._network.shortest_path(driver["location"], order["pickup"])
+
+        driver["route"] = path
+        driver["eta"] = cost
+        driver["status"] = "moving"
+        driver["orders"].append(order_id)
+
+        order["status"] = "assigned"
+        order["assigned"] = driver_id
+
+        self._actions_remaining -= 1
+        return f"OK: Assigned {order_id} to {driver_id}. Route: {' -> '.join(path)}. ETA: {cost}"
+
+    def _reroute_driver_impl(self, driver_id: str) -> str:
+        if driver_id not in self._drivers:
+            return f"ERROR: Driver '{driver_id}' not found"
+
+        driver = self._drivers[driver_id]
+        if not driver["orders"]:
+            return f"ERROR: Driver '{driver_id}' has no assigned orders"
+
+        oid = driver["orders"][0]
+        order = self._orders[oid]
+
+        cost, path = self._network.shortest_path(driver["location"], order["dropoff"])
+        driver["route"] = path
+        driver["eta"] = cost
+
+        self._actions_remaining -= 1
+        return f"OK: Rerouted {driver_id} to {order['dropoff']}. Route: {' -> '.join(path)}. ETA: {cost}"
+
+    def _delay_order_impl(self, order_id: str) -> str:
+        if order_id not in self._orders:
+            return f"ERROR: Order '{order_id}' not found"
+
+        self._orders[order_id]["deadline"] += 3
+        self._actions_remaining -= 1
+        return f"OK: Extended {order_id} deadline by 3 (new deadline: {self._orders[order_id]['deadline']})"
+
+    def _escalate_order_impl(self, order_id: str) -> str:
+        if order_id not in self._orders:
+            return f"ERROR: Order '{order_id}' not found"
+
+        self._orders[order_id]["deadline"] += 5
+        self._actions_remaining -= 1
+        return f"OK: Escalated {order_id}. Deadline extended by 5 (new deadline: {self._orders[order_id]['deadline']})"
+
+    def _advance_shift_impl(self) -> str:
+        self._state.time_step += 1
+        self._alerts = []
+
+        deliveries = self._update_drivers()
+        self._update_orders()
+
+        if self._rng.random() < 0.15:
+            self._alerts.append("Traffic spike detected")
+            self._network.update_traffic(multiplier=1.3)
+
+        new_orders = self._generate_orders(self._rng.randint(1, 3))
+        self._orders.update(new_orders)
+
+        self._actions_remaining = 3
+
+        lines = [f"=== SHIFT {self._state.time_step} SUMMARY ==="]
+        lines.append(f"Deliveries completed: {deliveries}")
+        lines.append(f"New orders received: {len(new_orders)}")
+        for oid in new_orders:
+            o = self._orders[oid]
+            lines.append(
+                f"  {oid}: {o['pickup']} -> {o['dropoff']} (deadline: {o['deadline']})"
+            )
+        if self._alerts:
+            lines.append(f"\nAlerts: {', '.join(self._alerts)}")
+        lines.append(f"\nActions remaining: {self._actions_remaining}")
+
+        return "\n".join(lines)
+
+    def _query_driver_impl(self, driver_id: str) -> str:
+        if driver_id not in self._drivers:
+            return f"ERROR: Driver '{driver_id}' not found"
+
+        d = self._drivers[driver_id]
+        lines = [f"=== DRIVER {driver_id} ==="]
+        lines.append(f"Status: {d['status']}")
+        lines.append(f"Location: {d['location']}")
+        lines.append(f"ETA: {d['eta']}")
+        lines.append(
+            f"Assigned orders: {', '.join(d['orders']) if d['orders'] else 'None'}"
+        )
+        if d["route"]:
+            lines.append(f"Route: {' -> '.join(d['route'])}")
+        return "\n".join(lines)
+
+    def _query_order_impl(self, order_id: str) -> str:
+        if order_id not in self._orders:
+            return f"ERROR: Order '{order_id}' not found"
+
+        o = self._orders[order_id]
+        lines = [f"=== ORDER {order_id} ==="]
+        lines.append(f"Status: {o['status']}")
+        lines.append(f"Pickup: {o['pickup']}")
+        lines.append(f"Dropoff: {o['dropoff']}")
+        lines.append(f"Deadline: {o['deadline']}")
+        if o["assigned"]:
+            lines.append(f"Assigned to: {o['assigned']}")
+        if o["delivered"] is not None:
+            lines.append(f"Delivered at step: {o['delivered']}")
+        return "\n".join(lines)
+
+    def _query_network_impl(self) -> str:
+        if not self._network:
+            return "ERROR: Network not initialized"
+
+        lines = ["=== NETWORK MAP ==="]
+        for node_id in self._network.get_all_nodes():
+            node = self._network.get_node(node_id)
+            neighbors = self._network.get_neighbors(node_id)
+            neighbor_info = []
+            for n in neighbors:
+                road = self._network.get_road(node_id, n)
+                traffic = self._network.get_traffic(node_id, n)
+                neighbor_info.append(f"{n}({road.distance}*{traffic:.1f})")
+            lines.append(f"{node_id} ({node.node_type}): {', '.join(neighbor_info)}")
+        return "\n".join(lines)
+
+    # ── Internal Helpers ───────────────────────────────────────────────────
+
+    def _spawn_drivers(self, n: int) -> Dict[str, Dict[str, Any]]:
         drivers = {}
         for i in range(n):
             drivers[f"D{i}"] = {
@@ -135,202 +505,102 @@ class LogiChainEnvironment(Environment):
             }
         return drivers
 
-    # ===========================
-    # ORDERS
-    # ===========================
-
-    def _generate_orders(self, n) -> Dict[str, Dict[str, Any]]:
+    def _generate_orders(self, n: int) -> Dict[str, Dict[str, Any]]:
         nodes = self._network.get_all_nodes()
         orders = {}
+        existing_count = len(self._orders)
 
         for i in range(n):
-            pickup = choice(nodes)
-            dropoff = choice(nodes)
+            pickup = self._rng.choice(nodes)
+            dropoff = self._rng.choice(nodes)
             while dropoff == pickup:
-                dropoff = choice(nodes)
+                dropoff = self._rng.choice(nodes)
 
-            orders[f"O{i}"] = {
+            oid = f"O{existing_count + i}"
+            orders[oid] = {
                 "pickup": pickup,
                 "dropoff": dropoff,
-                "deadline": self._rng.randint(10, 30),
+                "deadline": self._state.time_step + self._rng.randint(10, 30),
                 "status": "pending",
                 "assigned": None,
-                "created": 0,
+                "created": self._state.time_step,
                 "delivered": None,
             }
         return orders
 
-    # ===========================
-    # ACTIONS (TOOLS)
-    # ===========================
-
-    def _apply_atomic_action(self, a: Dict[str, Any]):
-        t = a.get("action_type")
-
-        if t == "assign_order":
-            return True, self._assign_order(a)
-        elif t == "reroute_driver":
-            return True, self._reroute_driver(a)
-        elif t == "delay_order":
-            return True, self._delay_order(a)
-        elif t == "escalate_order":
-            return True, self._escalate_order(a)
-        else:
-            self._alerts.append(f"Invalid action: {t}")
-            return False, -0.1
-
-    def _assign_order(self, a):
-        oid = a.get("order_id")
-        did = a.get("driver_id")
-
-        if oid not in self._state.orders or did not in self._state.drivers:
-            return -0.1
-
-        order = self._state.orders[oid]
-        driver = self._state.drivers[did]
-
-        if order["status"] != "pending":
-            return -0.05
-
-        cost, path = self._network.shortest_path(driver["location"], order["pickup"])
-
-        driver["route"] = path
-        driver["eta"] = cost
-        driver["status"] = "moving"
-        driver["orders"].append(oid)
-
-        order["status"] = "assigned"
-        order["assigned"] = did
-
-        return 0.0
-
-    def _reroute_driver(self, a):
-        did = a.get("driver_id")
-        if did not in self._state.drivers:
-            return -0.1
-
-        driver = self._state.drivers[did]
-        if not driver["orders"]:
-            return -0.05
-
-        oid = driver["orders"][0]
-        order = self._state.orders[oid]
-
-        cost, path = self._network.shortest_path(driver["location"], order["dropoff"])
-        driver["route"] = path
-        driver["eta"] = cost
-
-        return 0.0
-
-    def _delay_order(self, a):
-        oid = a.get("order_id")
-        if oid not in self._state.orders:
-            return -0.1
-
-        self._state.orders[oid]["deadline"] += 3
-        return -0.02
-
-    def _escalate_order(self, a):
-        oid = a.get("order_id")
-        if oid not in self._state.orders:
-            return -0.1
-
-        self._state.orders[oid]["deadline"] += 5
-        return -0.1
-
-    # ===========================
-    # SIMULATION
-    # ===========================
-
-    def _advance_time(self):
-        self._state.time_step += 1
-        self._state.step_count += 1
-
-    def _update_drivers(self):
-        for d in self._state.drivers.values():
+    def _update_drivers(self) -> int:
+        deliveries = 0
+        for d in self._drivers.values():
             if d["status"] == "moving":
                 d["eta"] -= 1
                 if d["eta"] <= 0 and d["route"]:
                     d["location"] = d["route"].pop(0)
                     if not d["route"]:
                         d["status"] = "idle"
+                        deliveries += 1
+        return deliveries
 
     def _update_orders(self):
-        for oid, o in self._state.orders.items():
+        for oid, o in self._orders.items():
             if o["status"] == "assigned":
-                d = self._state.drivers[o["assigned"]]
-
-                if d["location"] == o["dropoff"]:
+                driver = self._drivers[o["assigned"]]
+                if driver["location"] == o["dropoff"] and driver["status"] == "idle":
                     o["status"] = "delivered"
                     o["delivered"] = self._state.time_step
+            elif o["status"] == "pending" and self._state.time_step > o["deadline"]:
+                o["status"] = "failed"
 
-    def _inject_events(self):
-        if self._rng.random() < 0.1:
-            self._alerts.append("Traffic spike detected")
-            if self._network:
-                self._network.update_traffic(multiplier=1.3)
-
-    # ===========================
-    # REWARD
-    # ===========================
-
-    def _compute_delivery_rewards(self):
-        r = 0.0
-        for o in self._state.orders.values():
+    def _compute_shift_reward(self) -> float:
+        reward = 0.0
+        for o in self._orders.values():
             if o["status"] == "delivered" and o["delivered"] == self._state.time_step:
                 if o["delivered"] <= o["deadline"]:
-                    r += 1.0
+                    reward += 1.0
                 else:
-                    r += 0.5
-        return r
+                    reward += 0.5
+            elif o["status"] == "failed":
+                reward -= 0.5
+        return reward
 
-    # ===========================
-    # OBSERVATION
-    # ===========================
+    def _shaping_reward(
+        self, tool_name: str, result_text: str, is_error: bool
+    ) -> float:
+        if is_error:
+            return -0.05
 
-    def _render_dashboard(self):
-        lines = ["=== DRIVERS ==="]
-        for k, d in self._state.drivers.items():
-            lines.append(f"{k}: {d['status']} @ {d['location']}")
+        if tool_name in ("query_driver", "query_order", "query_network"):
+            return 0.01
 
-        lines.append("\n=== ORDERS ===")
-        for k, o in self._state.orders.items():
-            lines.append(f"{k}: {o['status']} deadline={o['deadline']}")
+        if tool_name in ("assign_order", "reroute_driver") and not is_error:
+            return 0.02
 
-        lines.append(f"\nTime: {self._state.time_step}")
+        if tool_name == "delay_order":
+            return -0.02
 
-        return "\n".join(lines)
+        if tool_name == "escalate_order":
+            return -0.05
 
-    def _build_observation(self, remaining_actions):
-        return LogiChainObservation(
-            done=False,
-            reward=None,
-            dashboard_text=self._render_dashboard(),
-            alerts=self._alerts,
-            available_actions=self._available_actions(),
-            remaining_actions=remaining_actions,
-        )
+        return 0.0
 
-    def _available_actions(self):
-        return [
-            "assign_order",
-            "reroute_driver",
-            "delay_order",
-            "escalate_order",
-            "noop",
-        ]
-
-    def _get_action_budget(self):
-        return 3
-
-    def _is_done(self):
+    def _is_done(self) -> bool:
         if self._state.time_step >= self._state.max_steps:
             return True
 
-        if all(
-            o["status"] in ["delivered", "failed"] for o in self._state.orders.values()
-        ):
+        if all(o["status"] in ("delivered", "failed") for o in self._orders.values()):
             return True
 
         return False
 
+    def _render_dashboard(self) -> str:
+        lines = ["=== DRIVERS ==="]
+        for k, d in self._drivers.items():
+            lines.append(f"{k}: {d['status']} @ {d['location']}")
+
+        lines.append("\n=== ORDERS ===")
+        for k, o in self._orders.items():
+            lines.append(f"{k}: {o['status']} deadline={o['deadline']}")
+
+        lines.append(f"\nTime: {self._state.time_step}")
+        lines.append(f"Actions remaining: {self._actions_remaining}")
+
+        return "\n".join(lines)

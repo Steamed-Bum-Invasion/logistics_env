@@ -7,10 +7,11 @@
 """Hackathon Env Environment."""
 
 from .client import HackathonEnv
-from .models import LogiChainAction, LogiChainObservation
+from .models import LogiChainObservation, LogiChainState, LogiChainToolObservation
 
 __all__ = [
-    "LogiChainAction",
     "LogiChainObservation",
+    "LogiChainToolObservation",
+    "LogiChainState",
     "HackathonEnv",
 ]

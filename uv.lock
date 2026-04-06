@@ -1635,6 +1635,7 @@ name = "openenv-hackathon-env"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "fastmcp" },
     { name = "networkx", version = "3.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "networkx", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "openenv-core", extra = ["core"] },
@@ -1648,6 +1649,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fastmcp", specifier = ">=2.0.0" },
     { name = "networkx", specifier = ">=3.0" },
     { name = "openenv-core", extras = ["core"], specifier = ">=0.2.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },

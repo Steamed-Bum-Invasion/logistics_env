@@ -43,13 +43,13 @@ except ModuleNotFoundError:
     from server.hackathon_env_environment import LogiChainEnvironment
 
 
-# Create the app with web interface and README integration
+# Create the app with web interface and README integration.
 app = create_app(
     LogiChainEnvironment,
     LogiChainAction,
     LogiChainObservation,
     env_name="hackathon_env",
-    max_concurrent_envs=1,  # increase this number to allow more concurrent WebSocket sessions
+    max_concurrent_envs=1,
 )
 
 

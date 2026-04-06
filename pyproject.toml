@@ -27,7 +27,7 @@ dependencies = [
   # "openspiel>=1.0.0",
   # "smolagents>=1.22.0,<2",
   "networkx>=3.0",
-
+  "fastmcp>=2.0.0",
 ]
 
 [project.optional-dependencies]
