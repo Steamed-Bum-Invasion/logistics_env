@@ -1,0 +1,25 @@
+# Reward configuration for LogiChain environment
+# Modify these values to tune agent learning behavior
+
+# Terminal rewards (applied when orders resolve)
+terminal:
+  enabled: true
+  delivery_on_time: 1.0
+  delivery_late: 0.5
+  order_failed: -0.5
+  deadline_scaling: true  # Scale reward by deadline tightness
+
+# Shaping rewards (applied on every step based on action)
+shaping:
+  query: 0.01           # query_driver, query_order, query_network
+  assign: 0.02          # assign_order (success)
+  reroute: 0.02         # reroute_driver (success)
+  delay: -0.02          # delay_order
+  escalate: -0.05       # escalate_order
+  error: -0.05          # Invalid action
+
+# No progress penalty (encourages agent to act, not stall)
+no_progress:
+  threshold: 10         # Steps without delivery AND without assignment
+  penalty: -0.05        # Penalty per step after threshold exceeded
+  max_no_progress: 50   # Episode ends after this many steps without progress

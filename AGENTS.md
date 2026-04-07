@@ -37,18 +37,18 @@ hackathon_env/
 | `reroute_driver` | Reroute driver to order dropoff |
 | `delay_order` | Extend deadline +3 steps |
 | `escalate_order` | Extend deadline +5 steps (costs more) |
-| `advance_shift` | Advance time, process deliveries, spawn new orders |
 | `query_driver` | Get driver status/location |
 | `query_order` | Get order status/details |
 | `query_network` | Get network topology + traffic |
 
 ## Key Mechanics
 
-- **Action budget**: 3 actions per shift, decrements on mutation tools, resets on `advance_shift()`
-- **New orders**: Spawn on every `advance_shift()` call (1-3 random orders)
-- **Time**: Only advances via `advance_shift()` tool (not implicit per step)
+- **Time advance**: Every `step()` call advances time by 1 tick automatically
+- **Driver movement**: Drivers move 1 unit toward destination every step
+- **Deadlines**: Orders fail immediately when `time_step > deadline` (continuous check)
+- **New orders**: 20% chance per step to spawn 1-2 new orders
+- **Traffic**: 15% chance per step for traffic spike (1.3x multiplier)
 - **Done**: When `time_step >= max_steps` (50) or all orders delivered/failed
-- **Rewards**: Terminal on `advance_shift()` (delivery success/failure), shaping rewards on other tools
 
 ## NetworkGraph
 
@@ -61,4 +61,12 @@ hackathon_env/
 
 - `LogiChainObservation` — returned by `reset()`, includes dashboard + available_tools
 - `LogiChainToolObservation` — returned by `step()` for tool calls, includes tool_result + reward
-- Both include `available_tools` and `remaining_actions` fields (always visible to agent)
+- Both include `available_tools` and `time_step` fields (always visible to agent)
+
+## Reward Structure
+
+| Event | Reward |
+|-------|--------|
+| Order delivered on time | +1.0 |
+| Order delivered late | +0.5 |
+| Order failed (deadline exceeded) | -0.5 |

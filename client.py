@@ -46,7 +46,7 @@ class HackathonEnv(
             episode_id=obs_data.get("episode_id", ""),
             done=payload.get("done", False),
             reward=payload.get("reward"),
-            remaining_actions=obs_data.get("remaining_actions", 3),
+            time_step=obs_data.get("time_step", 0),
             metadata=obs_data.get("metadata", {}),
         )
 

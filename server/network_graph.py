@@ -103,8 +103,16 @@ class NetworkGraph:
         ]
 
         road_names = [
-            "Main St", "Oak Ave", "Elm Blvd", "Park Dr", "Commerce Way",
-            "Industrial Rd", "Market St", "Harbor View", "Center St", "North Ave",
+            "Main St",
+            "Oak Ave",
+            "Elm Blvd",
+            "Park Dr",
+            "Commerce Way",
+            "Industrial Rd",
+            "Market St",
+            "Harbor View",
+            "Center St",
+            "North Ave",
         ]
 
         for i, (u, v, dist, cap, rtype) in enumerate(edges):
@@ -112,12 +120,8 @@ class NetworkGraph:
             self.roads[(u, v)] = Road(name, dist, cap, rtype)
             self.roads[(v, u)] = Road(name, dist, cap, rtype)
 
-            self._graph.add_edge(
-                u, v, distance=dist, road_type=rtype, capacity=cap
-            )
-            self._graph.add_edge(
-                v, u, distance=dist, road_type=rtype, capacity=cap
-            )
+            self._graph.add_edge(u, v, distance=dist, road_type=rtype, capacity=cap)
+            self._graph.add_edge(v, u, distance=dist, road_type=rtype, capacity=cap)
 
     def _generate_traffic(self) -> None:
         for (u, v), road in self.roads.items():
@@ -146,9 +150,7 @@ class NetworkGraph:
 
         try:
             path = nx.dijkstra_path(self._graph, start, end, weight=self._edge_weight)
-            cost = sum(
-                self._edge_weight(u, v) for u, v in zip(path[:-1], path[1:])
-            )
+            cost = sum(self._edge_weight(u, v) for u, v in zip(path[:-1], path[1:]))
             return int(cost), path
         except (nx.NetworkXNoPath, nx.NodeNotFound):
             return 9999, []
@@ -165,7 +167,7 @@ class NetworkGraph:
             for key in self.traffic:
                 self.traffic[key] *= multiplier
         else:
-            for (u, v) in self.roads:
+            for u, v in self.roads:
                 if u == node:
                     self.traffic[(u, v)] *= multiplier
 

@@ -11,7 +11,6 @@ AVAILABLE_TOOLS = [
     "reroute_driver",
     "delay_order",
     "escalate_order",
-    "advance_shift",
     "query_driver",
     "query_order",
     "query_network",
@@ -37,8 +36,7 @@ class LogiChainState(State):
     """Runtime state exposed by the environment server."""
 
     time_step: int = Field(default=0, description="Current simulation time step")
-    max_steps: int = Field(default=50, description="Maximum steps per episode")
-    actions_remaining: int = Field(default=3, description="Actions left this shift")
+    step_count: int = Field(default=0, description="Total agent actions taken")
     orders_pending: int = Field(default=0, description="Orders waiting to be assigned")
     orders_in_transit: int = Field(
         default=0, description="Orders currently being delivered"
@@ -61,7 +59,7 @@ class LogiChainObservation(Observation):
         default_factory=list, description="Available tools"
     )
     episode_id: str = Field(default="", description="Episode ID")
-    remaining_actions: int = Field(default=3, description="Actions left this shift")
+    time_step: int = Field(default=0, description="Current simulation time step")
 
 
 class LogiChainToolObservation(Observation):
@@ -76,4 +74,4 @@ class LogiChainToolObservation(Observation):
     available_tools: List[str] = Field(
         default_factory=list, description="Available tools"
     )
-    remaining_actions: int = Field(default=3, description="Actions left this shift")
+    time_step: int = Field(default=0, description="Current simulation time step")
