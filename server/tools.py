@@ -21,6 +21,16 @@ def assign_order(env: "LogiChainEnvironment", order_id: str, driver_id: str) -> 
     """
     Assign a pending order to a driver.
 
+    Workflow:
+        1. Driver routes to pickup location
+        2. Agent must call reroute_driver() after pickup
+        3. Driver routes to dropoff location
+        4. Order delivered when driver arrives
+
+    Note: If the driver is already on a delivery, they will abandon
+    their current order(s) to take this new assignment. Abandoned
+    orders revert to "pending" status.
+
     Args:
         env: The environment instance
         order_id: Order identifier (e.g. 'O0', 'O1')
@@ -40,22 +50,49 @@ def assign_order(env: "LogiChainEnvironment", order_id: str, driver_id: str) -> 
     if order["status"] != "pending":
         return f"ERROR: Order '{order_id}' is not pending (status: {order['status']})"
 
+    was_busy = driver["status"] == "moving" or len(driver["orders"]) > 0
+    abandoned_orders = []
+
+    if was_busy:
+        for prev_oid in driver["orders"]:
+            if prev_oid in env._orders:
+                prev_order = env._orders[prev_oid]
+                if prev_order["status"] in ("assigned", "in_transit"):
+                    prev_order["status"] = "pending"
+                    prev_order["assigned"] = None
+                    abandoned_orders.append(prev_oid)
+        driver["orders"] = []
+
     cost, path = env._network.shortest_path(driver["location"], order["pickup"])
 
-    driver["route"] = path[1:] if path and path[0] == driver["location"] else path
-    driver["eta"] = cost
+    if not path or cost >= 9999:
+        return f"ERROR: No route from {driver['location']} to {order['pickup']}"
+
+    driver["route"] = path[1:] if len(path) > 1 else []
+    if driver["route"]:
+        first_segment_cost, _ = env._network.shortest_path(driver["location"], driver["route"][0])
+        driver["eta"] = first_segment_cost
+    else:
+        driver["eta"] = 0
     driver["status"] = "moving"
     driver["orders"].append(order_id)
 
     order["status"] = "assigned"
     order["assigned"] = driver_id
 
+    if was_busy:
+        abandoned_str = f" (abandoned: {', '.join(abandoned_orders)})" if abandoned_orders else ""
+        return f"OK: Reassigned {order_id} to {driver_id}{abandoned_str}. Route: {' -> '.join(path)}. ETA: {cost}"
     return f"OK: Assigned {order_id} to {driver_id}. Route: {' -> '.join(path)}. ETA: {cost}"
 
 
 def reroute_driver(env: "LogiChainEnvironment", driver_id: str) -> str:
     """
     Reroute a driver to their assigned order's dropoff location.
+
+    This should be called after a driver arrives at the pickup location
+    to send them to the dropoff. Without rerouting, the driver will
+    remain idle at the pickup and the order will not be delivered.
 
     Args:
         env: The environment instance
@@ -75,8 +112,16 @@ def reroute_driver(env: "LogiChainEnvironment", driver_id: str) -> str:
     order = env._orders[oid]
 
     cost, path = env._network.shortest_path(driver["location"], order["dropoff"])
-    driver["route"] = path[1:] if path and path[0] == driver["location"] else path
-    driver["eta"] = cost
+
+    if not path or cost >= 9999:
+        return f"ERROR: No route from {driver['location']} to {order['dropoff']}"
+
+    driver["route"] = path[1:] if len(path) > 1 else []
+    if driver["route"]:
+        first_segment_cost, _ = env._network.shortest_path(driver["location"], driver["route"][0])
+        driver["eta"] = first_segment_cost
+    else:
+        driver["eta"] = 0
     driver["status"] = "moving"
 
     return f"OK: Rerouted {driver_id} to {order['dropoff']}. Route: {' -> '.join(path)}. ETA: {cost}"

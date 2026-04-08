@@ -99,6 +99,7 @@ def compute_shaping_reward(
     - Taking action (assign, reroute)
     - Penalizing stalling (delay, escalate)
     - Penalizing errors
+    - Penalizing driver reassignment (abandoning orders)
 
     Returns:
         Shaping reward for this action
@@ -118,7 +119,11 @@ def compute_shaping_reward(
 
     if tool_name == "assign_order":
         if tool_result and "OK:" in tool_result:
-            return cfg.get("assign", 0.02)
+            base_reward = cfg.get("assign", 0.02)
+            if "Reassigned" in tool_result:
+                reassign_penalty = cfg.get("reassign", -0.1)
+                return base_reward + reassign_penalty
+            return base_reward
         return 0.0
 
     if tool_name == "reroute_driver":
@@ -141,7 +146,7 @@ def check_no_progress_penalty(env: "LogiChainEnvironment") -> float:
 
     Progress is defined as:
     - New deliveries completed
-    - New orders assigned
+    - New orders assigned or in transit
 
     If no progress for too many steps, apply penalty to encourage action.
 
@@ -155,19 +160,20 @@ def check_no_progress_penalty(env: "LogiChainEnvironment") -> float:
     current_deliveries = sum(
         1 for o in env._orders.values() if o["status"] == "delivered"
     )
-    current_assignments = sum(
-        1 for o in env._orders.values() if o["status"] == "assigned"
+    current_active = sum(
+        1 for o in env._orders.values()
+        if o["status"] in ("assigned", "in_transit")
     )
 
     has_progress = (
         current_deliveries > env._total_deliveries_at_start
-        or current_assignments > env._total_assignments_at_start
+        or current_active > env._total_assignments_at_start
     )
 
     if has_progress:
         env._last_progress_step = env._state.time_step
         env._total_deliveries_at_start = current_deliveries
-        env._total_assignments_at_start = current_assignments
+        env._total_assignments_at_start = current_active
         env._steps_without_progress = 0
         return 0.0
 

@@ -15,6 +15,7 @@ serialization round-trip intact.
 """
 
 import os
+import random
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -97,7 +98,7 @@ class LogiChainEnvironment(Environment):
         self._orders: Dict[str, Dict[str, Any]] = {}
         self._alerts: List[str] = []
         self._step_count = 0
-        self._rng = __import__("random").Random()
+        self._rng = random.Random()
         self._state = LogiChainState()
         self._reset_count = 0
 
@@ -347,8 +348,8 @@ class LogiChainEnvironment(Environment):
         """Move drivers 1 unit along their route. Returns number of deliveries.
         
         ETA logic: Driver arrives when ETA goes negative (eta < 0), then the
-        next location in the route is popped. This ensures the driver spends
-        exactly 'eta' steps moving before arriving at each waypoint.
+        next location in the route is popped. The ETA is then recalculated
+        for the next segment of the route.
         """
         deliveries = 0
         for d in self._drivers.values():
@@ -359,6 +360,10 @@ class LogiChainEnvironment(Environment):
                     if not d["route"]:
                         d["status"] = "idle"
                         deliveries += 1
+                    else:
+                        next_stop = d["route"][0]
+                        cost, _ = self._network.shortest_path(d["location"], next_stop)
+                        d["eta"] = cost
         return deliveries
 
     def _update_orders(self):

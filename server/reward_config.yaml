@@ -13,6 +13,7 @@ terminal:
 shaping:
   query: 0.01           # query_driver, query_order, query_network
   assign: 0.02          # assign_order (success)
+  reassign: -0.1        # assign_order when driver was busy (abandoning orders)
   reroute: 0.02         # reroute_driver (success)
   delay: -0.02          # delay_order
   escalate: -0.05       # escalate_order

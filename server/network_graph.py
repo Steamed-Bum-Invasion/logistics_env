@@ -12,7 +12,7 @@ Supports procedural generation and configuration-driven networks.
 """
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from random import Random
 from typing import Any, Dict, List, Optional, Tuple
@@ -184,18 +184,14 @@ class NetworkGraph:
         Returns:
             NetworkGraph instance with generated topology
         """
-        config = NetworkConfig(
-            num_hubs=num_hubs,
-            num_warehouses=num_warehouses,
-            num_zones=num_zones,
-            num_customers=num_customers,
-            connectivity=connectivity,
-            max_edge_distance=max_edge_distance,
-        )
-        return cls.from_dict({"num_hubs": num_hubs, "num_warehouses": num_warehouses,
-                              "num_zones": num_zones, "num_customers": num_customers,
-                              "connectivity": connectivity, "max_edge_distance": max_edge_distance},
-                             seed=seed)
+        return cls.from_dict({
+            "num_hubs": num_hubs,
+            "num_warehouses": num_warehouses,
+            "num_zones": num_zones,
+            "num_customers": num_customers,
+            "connectivity": connectivity,
+            "max_edge_distance": max_edge_distance,
+        }, seed=seed)
 
     def _build_default_network(self) -> None:
         """Build the default hardcoded network (backward compatible)."""
