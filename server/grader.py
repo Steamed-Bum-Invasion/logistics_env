@@ -30,7 +30,7 @@ class GraderResult:
 class TaskGrader:
     """
     External grader that evaluates episode performance.
-    
+
     The grader runs AFTER the episode ends and provides a final score.
     This is separate from the internal reward signal the agent receives
     during the episode (shaping + terminal rewards).
@@ -44,7 +44,9 @@ class TaskGrader:
     def set_task(self, task_name: str) -> None:
         """Set the task to evaluate (must be in configured tasks)."""
         if task_name not in self.tasks:
-            raise ValueError(f"Unknown task: {task_name}. Available: {list(self.tasks.keys())}")
+            raise ValueError(
+                f"Unknown task: {task_name}. Available: {list(self.tasks.keys())}"
+            )
         self._current_task = task_name
 
     def get_current_task(self) -> str:
@@ -59,12 +61,12 @@ class TaskGrader:
     ) -> GraderResult:
         """
         Grade the episode based on the current task.
-        
+
         Args:
             state: Final LogiChainState after episode ends
             orders: Final orders dict with status, deadline, etc.
             terminal_reward: Sum of terminal rewards from env (for reference)
-        
+
         Returns:
             GraderResult with score (0.0-1.0) and metrics
         """
@@ -73,14 +75,45 @@ class TaskGrader:
         grader_type = task.get("grader", {}).get("type", "count_based")
         weights = task.get("grader", {}).get("weights", {})
 
-        if grader_type == "count_based":
+        if grader_type == "volume":
+            return self._grade_volume(state, orders, weights)
+        elif grader_type == "count_based":
             return self._grade_count_based(state, orders, weights)
         elif grader_type == "efficiency":
             return self._grade_efficiency(state, orders, weights)
         elif grader_type == "priority":
             return self._grade_priority(state, orders, weights)
+        elif grader_type == "throughput":
+            return self._grade_throughput(state, orders, weights)
         else:
             raise ValueError(f"Unknown grader type: {grader_type}")
+
+    def _grade_volume(
+        self,
+        state: LogiChainState,
+        orders: Dict[str, Dict[str, Any]],
+        weights: Dict[str, float],
+    ) -> GraderResult:
+        """Volume-based grading: maximize deliveries in short time (speed_run task)."""
+        delivered = state.orders_delivered
+        failed = state.orders_failed
+
+        score = (
+            weights.get("delivered", 1.0) * delivered
+            + weights.get("failed", -0.3) * failed
+        )
+
+        score = max(0.0, score)
+        score = min(1.0, score / 15.0)
+
+        return GraderResult(
+            score=score,
+            metrics={
+                "delivered": delivered,
+                "failed": failed,
+                "on_time": state.on_time_deliveries,
+            },
+        )
 
     def _grade_count_based(
         self,
@@ -88,16 +121,17 @@ class TaskGrader:
         orders: Dict[str, Dict[str, Any]],
         weights: Dict[str, float],
     ) -> GraderResult:
-        """Count-based grading: simple delivered vs failed scoring."""
+        """Count-based grading: simple delivered vs failed scoring (quick_delivery task)."""
         delivered = state.orders_delivered
         failed = state.orders_failed
 
-        # Calculate weighted score
-        score = weights.get("delivered", 1.0) * delivered + weights.get("failed", -0.5) * failed
+        score = (
+            weights.get("delivered", 1.0) * delivered
+            + weights.get("failed", -0.5) * failed
+        )
 
-        # Normalize to 0-1 range (approximate, assuming typical range)
-        # delivered: 0-20, failed: 0-10
-        score = max(0.0, min(1.0, score / 10.0))
+        score = max(0.0, score)
+        score = min(1.0, score / 12.0)
 
         return GraderResult(
             score=score,
@@ -114,21 +148,19 @@ class TaskGrader:
         orders: Dict[str, Dict[str, Any]],
         weights: Dict[str, float],
     ) -> GraderResult:
-        """Efficiency-based grading: on-time delivery focus."""
+        """Efficiency-based grading: on-time delivery focus (on_time_efficiency task)."""
         delivered = state.orders_delivered
         failed = state.orders_failed
         on_time = state.on_time_deliveries
 
-        # Calculate weighted score
         score = (
             weights.get("on_time", 0.6) * on_time
             + weights.get("delivered", 0.2) * delivered
             + weights.get("failed", -0.2) * failed
         )
 
-        # Normalize (on_time is most important)
-        # Typical: 0-15 on_time, 0-20 delivered, 0-10 failed
-        score = max(0.0, min(1.0, score / 10.0))
+        score = max(0.0, score)
+        score = min(1.0, score / 10.0)
 
         return GraderResult(
             score=score,
@@ -136,7 +168,11 @@ class TaskGrader:
                 "delivered": delivered,
                 "failed": failed,
                 "on_time": on_time,
-                "efficiency": on_time / max(1, delivered + failed) if (delivered + failed) > 0 else 0.0,
+                "efficiency": (
+                    on_time / max(1, delivered + failed)
+                    if (delivered + failed) > 0
+                    else 0.0
+                ),
             },
         )
 
@@ -146,33 +182,30 @@ class TaskGrader:
         orders: Dict[str, Dict[str, Any]],
         weights: Dict[str, float],
     ) -> GraderResult:
-        """Priority-based grading: focus on tight-deadline orders."""
+        """Priority-based grading: focus on tight-deadline orders (deadline_priority task)."""
         delivered = state.orders_delivered
         failed = state.orders_failed
         on_time = state.on_time_deliveries
 
-        # Count high-priority deliveries (delivered before deadline)
-        # and high-priority failures (failed with tight deadline)
         high_priority_delivered = 0
         high_priority_failed = 0
 
         for oid, order in orders.items():
             deadline = order.get("deadline", 100)
-            if deadline <= 15:  # Tight deadline = high priority
+            if deadline <= 15:
                 if order["status"] == "delivered":
                     high_priority_delivered += 1
                 elif order["status"] == "failed":
                     high_priority_failed += 1
 
-        # Calculate weighted score
         score = (
             weights.get("high_priority_delivered", 0.5) * high_priority_delivered
             + weights.get("on_time", 0.3) * on_time
             + weights.get("failed_high_priority", -0.5) * high_priority_failed
         )
 
-        # Normalize (high_priority matters most)
-        score = max(0.0, min(1.0, score / 8.0))
+        score = max(0.0, score)
+        score = min(1.0, score / 8.0)
 
         return GraderResult(
             score=score,
@@ -182,5 +215,40 @@ class TaskGrader:
                 "on_time": on_time,
                 "high_priority_delivered": high_priority_delivered,
                 "high_priority_failed": high_priority_failed,
+            },
+        )
+
+    def _grade_throughput(
+        self,
+        state: LogiChainState,
+        orders: Dict[str, Dict[str, Any]],
+        weights: Dict[str, float],
+    ) -> GraderResult:
+        """Throughput-based grading: high volume + on-time + efficiency (throughput_master task)."""
+        delivered = state.orders_delivered
+        failed = state.orders_failed
+        on_time = state.on_time_deliveries
+
+        total = delivered + failed
+        efficiency_ratio = on_time / max(1, delivered) if delivered > 0 else 0.0
+
+        score = (
+            weights.get("delivered", 0.3) * delivered
+            + weights.get("on_time", 0.5) * on_time
+            + weights.get("failed", -0.3) * failed
+            + weights.get("efficiency_ratio", 0.4) * efficiency_ratio * 10
+        )
+
+        score = max(0.0, score)
+        score = min(1.0, score / 20.0)
+
+        return GraderResult(
+            score=score,
+            metrics={
+                "delivered": delivered,
+                "failed": failed,
+                "on_time": on_time,
+                "efficiency_ratio": efficiency_ratio,
+                "total_resolved": total,
             },
         )

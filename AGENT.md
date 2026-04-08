@@ -169,22 +169,29 @@ Penalty examples:
 
 ## Step 4: Tasks & Graders
 
-Each environment MUST include **at least 3 tasks**:
+Each environment MUST include **at least 5 tasks** with difficulty range:
 
-| Task   | Difficulty | Description              |
-| ------ | ---------- | ------------------------ |
-| Task 1 | Easy       | Simple, direct solution  |
-| Task 2 | Medium     | Multi-step reasoning     |
-| Task 3 | Hard       | Ambiguous or constrained |
+| Task | Difficulty | Done Condition | Grader Type |
+|------|------------|----------------|-------------|
+| Task 1 | Very Easy | time_limit (20) | volume |
+| Task 2 | Easy | time_limit (30) | count_based |
+| Task 3 | Medium | all_resolved | efficiency |
+| Task 4 | Hard | all_resolved | priority |
+| Task 5 | Very Hard | all_resolved | throughput |
 
 ### Grader Requirements
 
-- Deterministic
-- Returns score between **0.0 and 1.0**
-- Evaluates:
-  - correctness
-  - efficiency
-  - constraint satisfaction
+- **Deterministic**: Same input → same score every time
+- **Reproducible**: Uses only episode state (no random seeds)
+- **Normalized**: Returns score between **0.0 and 1.0**
+- **Floor before scale**: Apply `max(0.0, score)` then `min(1.0, score / denominator)`
+
+```python
+# Correct normalization order:
+score = weights.get("delivered", 1.0) * delivered + weights.get("failed", -0.5) * failed
+score = max(0.0, score)  # Floor first
+score = min(1.0, score / denominator)  # Then scale
+```
 
 ---
 
@@ -301,12 +308,12 @@ Before completion, ensure:
 
 - [ ] Models are typed and clear
 - [ ] reset/step/state implemented correctly
-- [ ] 3+ tasks defined
-- [ ] deterministic grader implemented
-- [ ] reward is meaningful and dense
+- [ ] **5 tasks defined** with difficulty range
+- [ ] **Deterministic grader** with 0.0-1.0 output
+- [ ] Reward is meaningful and dense
 - [ ] Dockerfile builds and runs
-- [ ] client works end-to-end
-- [ ] baseline script produces reproducible scores
+- [ ] Client works end-to-end
+- [ ] Baseline script produces reproducible scores
 
 ---
 
