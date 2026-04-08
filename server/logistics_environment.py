@@ -36,7 +36,6 @@ from logistics_env.models import (
     LogiChainToolObservation,
 )
 from logistics_env.server.network_graph import NetworkGraph
-from logistics_env.server.grader import TaskGrader
 from logistics_env.server import tools
 from logistics_env.server import rewards
 
@@ -104,9 +103,6 @@ class LogiChainEnvironment(Environment):
         self._reward_config = _load_yaml("reward_config.yaml")
         self._task_config = _load_yaml("task_config.yaml")
         self._current_task = task_name or self._task_config.get("default_task", "quick_delivery")
-
-        self._grader = TaskGrader(self._task_config)
-        self._grader.set_task(self._current_task)
 
         self._steps_without_progress = 0
         self._last_progress_step = 0

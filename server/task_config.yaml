@@ -1,5 +1,5 @@
 # Task configuration for LogiChain environment
-# Each task defines a concrete objective with a deterministic grader
+# Each task defines a concrete objective
 # Difficulty range: very_easy -> very_hard
 
 default_task: quick_delivery
@@ -12,11 +12,6 @@ tasks:
     done_condition:
       type: time_limit
       max_time_steps: 20
-    grader:
-      type: volume
-      weights:
-        delivered: 1.0
-        failed: -0.3
 
   quick_delivery:
     name: "Quick Delivery"
@@ -25,11 +20,6 @@ tasks:
     done_condition:
       type: time_limit
       max_time_steps: 30
-    grader:
-      type: count_based
-      weights:
-        delivered: 1.0
-        failed: -0.5
 
   on_time_efficiency:
     name: "On-Time Efficiency"
@@ -37,12 +27,6 @@ tasks:
     description: "Maximize on-time deliveries while minimizing failures"
     done_condition:
       type: all_resolved
-    grader:
-      type: efficiency
-      weights:
-        on_time: 0.6
-        delivered: 0.2
-        failed: -0.2
 
   deadline_priority:
     name: "Deadline Priority"
@@ -50,12 +34,6 @@ tasks:
     description: "Handle high-priority (tight deadline) orders first"
     done_condition:
       type: all_resolved
-    grader:
-      type: priority
-      weights:
-        high_priority_delivered: 0.5
-        on_time: 0.3
-        failed_high_priority: -0.5
 
   throughput_master:
     name: "Throughput Master"
@@ -63,10 +41,3 @@ tasks:
     description: "Achieve high volume while maintaining on-time efficiency"
     done_condition:
       type: all_resolved
-    grader:
-      type: throughput
-      weights:
-        delivered: 0.3
-        on_time: 0.5
-        failed: -0.3
-        efficiency_ratio: 0.4
