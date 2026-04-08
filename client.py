@@ -12,7 +12,11 @@ from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 from openenv.core.env_server.types import State
 
-from logistics_env.models import LogiChainAction, LogiChainObservation
+from logistics_env.models import (
+    LogiChainAction,
+    LogiChainObservation,
+    LogiChainToolObservation,
+)
 
 
 class LogisticsEnv(
@@ -39,16 +43,28 @@ class LogisticsEnv(
 
     def _parse_result(self, payload: Dict) -> StepResult[LogiChainObservation]:
         obs_data = payload.get("observation", {})
-        observation = LogiChainObservation(
-            dashboard_text=obs_data.get("dashboard_text", ""),
-            alerts=obs_data.get("alerts", []),
-            available_tools=obs_data.get("available_tools", []),
-            episode_id=obs_data.get("episode_id", ""),
-            done=payload.get("done", False),
-            reward=payload.get("reward"),
-            time_step=obs_data.get("time_step", 0),
-            metadata=obs_data.get("metadata", {}),
-        )
+        
+        if "tool_result" in obs_data or "tool_name" in obs_data:
+            observation = LogiChainToolObservation(
+                tool_name=obs_data.get("tool_name", ""),
+                tool_result=obs_data.get("tool_result", ""),
+                error_msg=obs_data.get("error_msg"),
+                alerts=obs_data.get("alerts", []),
+                available_tools=obs_data.get("available_tools", []),
+                done=payload.get("done", False),
+                reward=payload.get("reward"),
+                time_step=obs_data.get("time_step", 0),
+            )
+        else:
+            observation = LogiChainObservation(
+                dashboard_text=obs_data.get("dashboard_text", ""),
+                alerts=obs_data.get("alerts", []),
+                available_tools=obs_data.get("available_tools", []),
+                episode_id=obs_data.get("episode_id", ""),
+                done=payload.get("done", False),
+                reward=payload.get("reward"),
+                time_step=obs_data.get("time_step", 0),
+            )
 
         return StepResult(
             observation=observation,

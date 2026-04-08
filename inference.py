@@ -299,7 +299,7 @@ async def main() -> None:
         result = await run_task(client, task)
         results.append(result)
 
-    print(f"\n=== SUMMARY ===", flush=True)
+    print("\n=== SUMMARY ===", flush=True)
     for r in results:
         print(
             f"Task: {r['task']}, Score: {r['score']:.3f}, Success: {r['success']}",

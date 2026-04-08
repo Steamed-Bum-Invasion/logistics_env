@@ -303,7 +303,12 @@ class LogiChainEnvironment(Environment):
         )
 
     def _move_drivers(self) -> int:
-        """Move drivers 1 unit along their route. Returns number of deliveries."""
+        """Move drivers 1 unit along their route. Returns number of deliveries.
+        
+        ETA logic: Driver arrives when ETA goes negative (eta < 0), then the
+        next location in the route is popped. This ensures the driver spends
+        exactly 'eta' steps moving before arriving at each waypoint.
+        """
         deliveries = 0
         for d in self._drivers.values():
             if d["status"] == "moving":
@@ -319,6 +324,13 @@ class LogiChainEnvironment(Environment):
         """Update order statuses: check deliveries and deadline failures."""
         for oid, o in self._orders.items():
             if o["status"] == "assigned":
+                driver = self._drivers[o["assigned"]]
+                if driver["status"] == "moving":
+                    o["status"] = "in_transit"
+                elif driver["location"] == o["dropoff"] and driver["status"] == "idle":
+                    o["status"] = "delivered"
+                    o["delivered"] = self._state.time_step
+            elif o["status"] == "in_transit":
                 driver = self._drivers[o["assigned"]]
                 if driver["location"] == o["dropoff"] and driver["status"] == "idle":
                     o["status"] = "delivered"

@@ -170,6 +170,9 @@ class NetworkGraph:
             for u, v in self.roads:
                 if u == node:
                     self.traffic[(u, v)] *= multiplier
+        
+        self._all_pairs_paths.clear()
+        self._precompute_all_pairs()
 
     def get_node(self, node_id: str) -> Optional[Node]:
         return self.nodes.get(node_id)

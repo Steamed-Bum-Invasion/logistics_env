@@ -96,8 +96,12 @@ def delay_order(env: "LogiChainEnvironment", order_id: str) -> str:
     if order_id not in env._orders:
         return f"ERROR: Order '{order_id}' not found"
 
-    env._orders[order_id]["deadline"] += 3
-    return f"OK: Extended {order_id} deadline by 3 (new deadline: {env._orders[order_id]['deadline']})"
+    order = env._orders[order_id]
+    if order["status"] in ("delivered", "failed"):
+        return f"ERROR: Order '{order_id}' is already {order['status']}"
+
+    order["deadline"] += 3
+    return f"OK: Extended {order_id} deadline by 3 (new deadline: {order['deadline']})"
 
 
 def escalate_order(env: "LogiChainEnvironment", order_id: str) -> str:
@@ -114,8 +118,12 @@ def escalate_order(env: "LogiChainEnvironment", order_id: str) -> str:
     if order_id not in env._orders:
         return f"ERROR: Order '{order_id}' not found"
 
-    env._orders[order_id]["deadline"] += 5
-    return f"OK: Escalated {order_id}. Deadline extended by 5 (new deadline: {env._orders[order_id]['deadline']})"
+    order = env._orders[order_id]
+    if order["status"] in ("delivered", "failed"):
+        return f"ERROR: Order '{order_id}' is already {order['status']}"
+
+    order["deadline"] += 5
+    return f"OK: Escalated {order_id}. Deadline extended by 5 (new deadline: {order['deadline']})"
 
 
 def query_driver(env: "LogiChainEnvironment", driver_id: str) -> str:

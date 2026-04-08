@@ -177,8 +177,8 @@ The environment includes 5 tasks with different objectives:
 
 ### No-Progress Penalty
 
-- After 10 steps without progress (delivery or assignment): -0.05 per step
-- Episode ends after 50 steps without progress
+- After 10 steps without progress (delivery or assignment), a penalty of -0.05 is applied per step
+- Episode ends after 50 consecutive steps without progress
 
 ## Setup Instructions
 
@@ -291,7 +291,6 @@ logistics_env/
     ├── logistics_environment.py  # Core environment logic
     ├── tools.py             # Tool implementations
     ├── rewards.py           # Reward computation
-    ├── grader.py            # Task grading logic
     ├── network_graph.py     # NetworkX-based network
     ├── Dockerfile           # Container image definition
     ├── requirements.txt     # Python dependencies

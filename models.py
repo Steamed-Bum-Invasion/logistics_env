@@ -35,6 +35,7 @@ class LogiChainAction(Action):
 class LogiChainState(State):
     """Runtime state exposed by the environment server."""
 
+    episode_id: str = Field(default="", description="Unique episode identifier")
     time_step: int = Field(default=0, description="Current simulation time step")
     step_count: int = Field(default=0, description="Total agent actions taken")
     orders_pending: int = Field(default=0, description="Orders waiting to be assigned")
