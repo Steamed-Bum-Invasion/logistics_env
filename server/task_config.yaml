@@ -12,6 +12,22 @@ tasks:
     done_condition:
       type: time_limit
       max_time_steps: 20
+    network:
+      num_hubs: 1
+      num_warehouses: 2
+      num_zones: 5
+      num_customers: 4
+      connectivity: 0.3
+      max_edge_distance: 12
+      variation_mode: fixed
+    simulation:
+      num_drivers: 5
+      initial_orders: 10
+      order_spawn_rate: 0.2
+      order_deadline_min: 10
+      order_deadline_max: 30
+      traffic_spike_rate: 0.15
+      traffic_spike_multiplier: 1.3
 
   quick_delivery:
     name: "Quick Delivery"
@@ -20,6 +36,17 @@ tasks:
     done_condition:
       type: time_limit
       max_time_steps: 30
+    network:
+      config_file: networks/default.yaml
+      variation_mode: fixed
+    simulation:
+      num_drivers: 5
+      initial_orders: 10
+      order_spawn_rate: 0.2
+      order_deadline_min: 10
+      order_deadline_max: 30
+      traffic_spike_rate: 0.15
+      traffic_spike_multiplier: 1.3
 
   on_time_efficiency:
     name: "On-Time Efficiency"
@@ -27,6 +54,22 @@ tasks:
     description: "Maximize on-time deliveries while minimizing failures"
     done_condition:
       type: all_resolved
+    network:
+      num_hubs: 2
+      num_warehouses: 3
+      num_zones: 8
+      num_customers: 10
+      connectivity: 0.4
+      max_edge_distance: 15
+      variation_mode: fixed
+    simulation:
+      num_drivers: 8
+      initial_orders: 15
+      order_spawn_rate: 0.25
+      order_deadline_min: 12
+      order_deadline_max: 35
+      traffic_spike_rate: 0.18
+      traffic_spike_multiplier: 1.3
 
   deadline_priority:
     name: "Deadline Priority"
@@ -34,6 +77,17 @@ tasks:
     description: "Handle high-priority (tight deadline) orders first"
     done_condition:
       type: all_resolved
+    network:
+      config_file: networks/complex.yaml
+      variation_mode: fixed
+    simulation:
+      num_drivers: 6
+      initial_orders: 12
+      order_spawn_rate: 0.22
+      order_deadline_min: 8
+      order_deadline_max: 20
+      traffic_spike_rate: 0.2
+      traffic_spike_multiplier: 1.4
 
   throughput_master:
     name: "Throughput Master"
@@ -41,3 +95,19 @@ tasks:
     description: "Achieve high volume while maintaining on-time efficiency"
     done_condition:
       type: all_resolved
+    network:
+      num_hubs: 1
+      num_warehouses: 4
+      num_zones: 10
+      num_customers: 15
+      connectivity: 0.5
+      max_edge_distance: 12
+      variation_mode: fixed
+    simulation:
+      num_drivers: 10
+      initial_orders: 20
+      order_spawn_rate: 0.3
+      order_deadline_min: 10
+      order_deadline_max: 30
+      traffic_spike_rate: 0.2
+      traffic_spike_multiplier: 1.3

@@ -206,7 +206,7 @@ uvicorn server.app:app --reload --host 0.0.0.0 --port 8000
 
 ```bash
 # Build the Docker image
-docker build -t logistics-env:latest -f server/Dockerfile .
+docker build -t logistics-env:latest .
 ```
 
 ### Running Inference

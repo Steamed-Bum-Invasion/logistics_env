@@ -53,11 +53,11 @@ envs/my_env/
 ├── models.py
 ├── client.py
 ├── README.md
+├── Dockerfile
 └── server/
     ├── __init__.py
     ├── my_environment.py
-    ├── app.py
-    └── Dockerfile
+    └── app.py
 ```
 
 ---

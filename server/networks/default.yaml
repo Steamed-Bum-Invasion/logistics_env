@@ -1,0 +1,156 @@
+# Default Network Configuration
+# Matches the original hardcoded network for backward compatibility
+
+nodes:
+  - id: HUB
+    type: hub
+    name: Central Distribution Hub
+    x: 0
+    y: 0
+  - id: W1
+    type: warehouse
+    name: Warehouse Alpha
+    x: -3
+    y: 2
+  - id: W2
+    type: warehouse
+    name: Warehouse Beta
+    x: 3
+    y: 2
+  - id: Z1
+    type: zone
+    name: North District
+    x: -2
+    y: 4
+  - id: Z2
+    type: zone
+    name: East District
+    x: 2
+    y: 4
+  - id: Z3
+    type: zone
+    name: South District
+    x: 0
+    y: -3
+  - id: Z4
+    type: zone
+    name: West District
+    x: -4
+    y: 0
+  - id: Z5
+    type: zone
+    name: Central Business
+    x: 1
+    y: 1
+  - id: C1
+    type: customer
+    name: Customer Zone A
+    x: -1
+    y: 5
+  - id: C2
+    type: customer
+    name: Customer Zone B
+    x: 4
+    y: 3
+  - id: C3
+    type: customer
+    name: Customer Zone C
+    x: 0
+    y: -5
+  - id: C4
+    type: customer
+    name: Customer Zone D
+    x: -5
+    y: -1
+
+edges:
+  - from: HUB
+    to: W1
+    distance: 8
+    capacity: 20
+    road_type: arterial
+  - from: HUB
+    to: W2
+    distance: 10
+    capacity: 25
+    road_type: arterial
+  - from: HUB
+    to: Z5
+    distance: 5
+    capacity: 30
+    road_type: standard
+  - from: HUB
+    to: Z3
+    distance: 7
+    capacity: 20
+    road_type: arterial
+  - from: W1
+    to: Z1
+    distance: 6
+    capacity: 15
+    road_type: standard
+  - from: W1
+    to: Z4
+    distance: 9
+    capacity: 15
+    road_type: standard
+  - from: W1
+    to: Z5
+    distance: 7
+    capacity: 20
+    road_type: arterial
+  - from: W2
+    to: Z2
+    distance: 6
+    capacity: 15
+    road_type: standard
+  - from: W2
+    to: Z5
+    distance: 8
+    capacity: 20
+    road_type: arterial
+  - from: W2
+    to: C2
+    distance: 10
+    capacity: 10
+    road_type: standard
+  - from: Z1
+    to: C1
+    distance: 5
+    capacity: 10
+    road_type: standard
+  - from: Z2
+    to: C2
+    distance: 7
+    capacity: 10
+    road_type: standard
+  - from: Z3
+    to: C3
+    distance: 5
+    capacity: 10
+    road_type: standard
+  - from: Z4
+    to: C4
+    distance: 4
+    capacity: 10
+    road_type: standard
+  - from: Z5
+    to: Z1
+    distance: 4
+    capacity: 25
+    road_type: arterial
+  - from: Z5
+    to: Z2
+    distance: 4
+    capacity: 25
+    road_type: arterial
+  - from: Z5
+    to: Z3
+    distance: 6
+    capacity: 20
+    road_type: standard
+  - from: Z5
+    to: Z4
+    distance: 5
+    capacity: 20
+    road_type: standard

@@ -1,0 +1,71 @@
+# Small City Network Configuration
+# Compact network for simpler scenarios
+
+nodes:
+  - id: HUB
+    type: hub
+    name: Central Hub
+    x: 0
+    y: 0
+  - id: W1
+    type: warehouse
+    name: Warehouse
+    x: 2
+    y: 1
+  - id: Z1
+    type: zone
+    name: North Zone
+    x: 0
+    y: 3
+  - id: Z2
+    type: zone
+    name: South Zone
+    x: 0
+    y: -3
+  - id: C1
+    type: customer
+    name: Customer A
+    x: 1
+    y: 4
+  - id: C2
+    type: customer
+    name: Customer B
+    x: -1
+    y: -4
+
+edges:
+  - from: HUB
+    to: W1
+    distance: 5
+    capacity: 20
+    road_type: arterial
+  - from: HUB
+    to: Z1
+    distance: 4
+    capacity: 15
+    road_type: standard
+  - from: HUB
+    to: Z2
+    distance: 4
+    capacity: 15
+    road_type: standard
+  - from: W1
+    to: Z1
+    distance: 3
+    capacity: 15
+    road_type: standard
+  - from: W1
+    to: Z2
+    distance: 5
+    capacity: 15
+    road_type: standard
+  - from: Z1
+    to: C1
+    distance: 2
+    capacity: 10
+    road_type: standard
+  - from: Z2
+    to: C2
+    distance: 2
+    capacity: 10
+    road_type: standard

@@ -14,6 +14,7 @@ LogiChainEnvironment controls reward computation and returns LogiChainToolObserv
 serialization round-trip intact.
 """
 
+import os
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -40,10 +41,8 @@ from logistics_env.server import tools
 from logistics_env.server import rewards
 
 
-def _load_yaml(filename: str) -> dict:
+def _load_yaml(filename: str, server_dir: Path) -> dict:
     """Load YAML config from server directory."""
-    import os
-    server_dir = Path(os.environ.get("SERVER_DIR", "/app/env/server"))
     config_path = server_dir / filename
     with open(config_path) as f:
         return yaml.safe_load(f)
@@ -92,6 +91,7 @@ class LogiChainEnvironment(Environment):
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
 
     def __init__(self, task_name: str = None):
+        self._server_dir = Path(os.environ.get("SERVER_DIR", "/app/env/server"))
         self._network: Optional[NetworkGraph] = None
         self._drivers: Dict[str, Dict[str, Any]] = {}
         self._orders: Dict[str, Dict[str, Any]] = {}
@@ -99,15 +99,24 @@ class LogiChainEnvironment(Environment):
         self._step_count = 0
         self._rng = __import__("random").Random()
         self._state = LogiChainState()
+        self._reset_count = 0
 
-        self._reward_config = _load_yaml("reward_config.yaml")
-        self._task_config = _load_yaml("task_config.yaml")
+        self._reward_config = _load_yaml("reward_config.yaml", self._server_dir)
+        self._task_config = _load_yaml("task_config.yaml", self._server_dir)
         self._current_task = task_name or self._task_config.get("default_task", "quick_delivery")
 
         self._steps_without_progress = 0
         self._last_progress_step = 0
         self._total_deliveries_at_start = 0
         self._total_assignments_at_start = 0
+
+        self._num_drivers = 5
+        self._initial_orders = 10
+        self._order_spawn_rate = 0.2
+        self._order_deadline_min = 10
+        self._order_deadline_max = 30
+        self._traffic_spike_rate = 0.15
+        self._traffic_spike_multiplier = 1.3
 
         mcp = FastMCP("logichain_env")
 
@@ -158,6 +167,7 @@ class LogiChainEnvironment(Environment):
         if seed is not None:
             self._rng.seed(seed)
 
+        self._reset_count += 1
         self._alerts = []
         self._step_count = 0
         self._state.time_step = 0
@@ -168,9 +178,11 @@ class LogiChainEnvironment(Environment):
         self._total_deliveries_at_start = 0
         self._total_assignments_at_start = 0
 
-        self._network = NetworkGraph(seed=seed)
-        self._drivers = self._spawn_drivers(5)
-        self._orders = self._generate_orders(10)
+        task_cfg = self._task_config.get("tasks", {}).get(self._current_task, {})
+        self._load_simulation_config(task_cfg)
+        self._network = self._create_network(seed, task_cfg)
+        self._drivers = self._spawn_drivers(self._num_drivers)
+        self._orders = self._generate_orders(self._initial_orders)
 
         return LogiChainObservation(
             dashboard_text=self._render_dashboard(),
@@ -181,6 +193,35 @@ class LogiChainEnvironment(Environment):
             reward=0.0,
             time_step=self._state.time_step,
         )
+
+    def _load_simulation_config(self, task_cfg: Dict[str, Any]) -> None:
+        """Load simulation parameters from task config."""
+        sim_cfg = task_cfg.get("simulation", {})
+        self._num_drivers = sim_cfg.get("num_drivers", 5)
+        self._initial_orders = sim_cfg.get("initial_orders", 10)
+        self._order_spawn_rate = sim_cfg.get("order_spawn_rate", 0.2)
+        self._order_deadline_min = sim_cfg.get("order_deadline_min", 10)
+        self._order_deadline_max = sim_cfg.get("order_deadline_max", 30)
+        self._traffic_spike_rate = sim_cfg.get("traffic_spike_rate", 0.15)
+        self._traffic_spike_multiplier = sim_cfg.get("traffic_spike_multiplier", 1.3)
+
+    def _create_network(self, seed: Optional[int], task_cfg: Dict[str, Any]) -> NetworkGraph:
+        """Create network from task configuration."""
+        network_cfg = task_cfg.get("network", {})
+        variation_mode = network_cfg.get("variation_mode", "fixed")
+
+        if variation_mode == "per_reset":
+            network_seed = (seed or 0) + self._reset_count * 1000
+        else:
+            network_seed = seed
+
+        if "config_file" in network_cfg:
+            config_path = self._server_dir / network_cfg["config_file"]
+            return NetworkGraph.from_config(str(config_path), seed=network_seed)
+        elif network_cfg:
+            return NetworkGraph.from_dict(network_cfg, seed=network_seed)
+        else:
+            return NetworkGraph(seed=network_seed)
 
     def step(
         self,
@@ -340,8 +381,8 @@ class LogiChainEnvironment(Environment):
                 o["failed_at"] = self._state.time_step
 
     def _spawn_orders(self):
-        """Spawn new orders with 20% probability per step."""
-        if self._rng.random() < 0.2:
+        """Spawn new orders with configurable probability per step."""
+        if self._rng.random() < self._order_spawn_rate:
             new_orders = self._generate_orders(self._rng.randint(1, 2))
             self._orders.update(new_orders)
             for oid in new_orders:
@@ -351,10 +392,10 @@ class LogiChainEnvironment(Environment):
                 )
 
     def _update_traffic(self):
-        """Randomly trigger traffic spikes."""
-        if self._rng.random() < 0.15:
+        """Randomly trigger traffic spikes with configurable rate."""
+        if self._rng.random() < self._traffic_spike_rate:
             self._alerts.append("Traffic spike detected")
-            self._network.update_traffic(multiplier=1.3)
+            self._network.update_traffic(multiplier=self._traffic_spike_multiplier)
 
     def _is_done(self) -> bool:
         """Check if episode should end based on task conditions."""
@@ -380,10 +421,16 @@ class LogiChainEnvironment(Environment):
         return False
 
     def _spawn_drivers(self, n: int) -> Dict[str, Dict[str, Any]]:
+        """Spawn drivers at random hub nodes."""
+        hubs = self._network.get_hub_nodes()
+        if not hubs:
+            hubs = [self._network.get_all_nodes()[0]]
+
         drivers = {}
         for i in range(n):
+            start_location = self._rng.choice(hubs)
             drivers[f"D{i}"] = {
-                "location": "HUB",
+                "location": start_location,
                 "route": [],
                 "eta": 0,
                 "status": "idle",
@@ -392,6 +439,7 @@ class LogiChainEnvironment(Environment):
         return drivers
 
     def _generate_orders(self, n: int) -> Dict[str, Dict[str, Any]]:
+        """Generate orders with configurable deadline range."""
         nodes = self._network.get_all_nodes()
         orders = {}
         existing_count = len(self._orders)
@@ -402,11 +450,15 @@ class LogiChainEnvironment(Environment):
             while dropoff == pickup:
                 dropoff = self._rng.choice(nodes)
 
+            deadline = self._state.time_step + self._rng.randint(
+                self._order_deadline_min, self._order_deadline_max
+            )
+
             oid = f"O{existing_count + i}"
             orders[oid] = {
                 "pickup": pickup,
                 "dropoff": dropoff,
-                "deadline": self._state.time_step + self._rng.randint(10, 30),
+                "deadline": deadline,
                 "status": "pending",
                 "assigned": None,
                 "created": self._state.time_step,
