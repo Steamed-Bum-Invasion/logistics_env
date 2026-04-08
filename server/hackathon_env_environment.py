@@ -447,7 +447,7 @@ class LogiChainEnvironment(Environment):
         for d in self._drivers.values():
             if d["status"] == "moving":
                 d["eta"] -= 1
-                if d["eta"] <= 0 and d["route"]:
+                if d["eta"] < 0 and d["route"]:
                     d["location"] = d["route"].pop(0)
                     if not d["route"]:
                         d["status"] = "idle"
