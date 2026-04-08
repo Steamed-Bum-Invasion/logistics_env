@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 """
-FastAPI application for the Hackathon Env Environment.
+FastAPI application for the Logistics Env Environment.
 
 This module creates an HTTP server that exposes the LogiChainEnvironment
 over HTTP and WebSocket endpoints, compatible with EnvClient.
@@ -30,25 +30,20 @@ Usage:
 
 try:
     from openenv.core.env_server.http_server import create_app
-except Exception as e:  # pragma: no cover
+except Exception as e:
     raise ImportError(
-        "openenv is required for the web interface. Install dependencies with '\n    uv sync\n'"
+        "openenv is required for the web interface. Install dependencies with 'uv sync'"
     ) from e
 
-try:
-    from hackathon_env.models import LogiChainAction, LogiChainObservation
-    from hackathon_env.server.hackathon_env_environment import LogiChainEnvironment
-except ModuleNotFoundError:
-    from models import LogiChainAction, LogiChainObservation
-    from server.hackathon_env_environment import LogiChainEnvironment
+from logistics_env.models import LogiChainAction, LogiChainObservation
+from logistics_env.server.logistics_environment import LogiChainEnvironment
 
 
-# Create the app with web interface and README integration.
 app = create_app(
     LogiChainEnvironment,
     LogiChainAction,
     LogiChainObservation,
-    env_name="hackathon_env",
+    env_name="logistics_env",
     max_concurrent_envs=1,
 )
 
@@ -57,18 +52,9 @@ def main(host: str = "0.0.0.0", port: int = 8000):
     """
     Entry point for direct execution via uv run or python -m.
 
-    This function enables running the server without Docker:
-        uv run --project . server
-        uv run --project . server --port 8001
-        python -m hackathon_env.server.app
-
     Args:
         host: Host address to bind to (default: "0.0.0.0")
         port: Port number to listen on (default: 8000)
-
-    For production deployments, consider using uvicorn directly with
-    multiple workers:
-        uvicorn hackathon_env.server.app:app --workers 4
     """
     import uvicorn
 

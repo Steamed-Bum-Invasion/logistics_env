@@ -12,10 +12,7 @@ Provides deterministic scoring (0.0-1.0) based on task objectives.
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-try:
-    from hackathon_env.models import LogiChainState
-except ModuleNotFoundError:
-    from models import LogiChainState
+from logistics_env.models import LogiChainState
 
 
 @dataclass

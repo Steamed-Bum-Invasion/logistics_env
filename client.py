@@ -4,7 +4,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-"""Hackathon Env Environment Client."""
+"""Logistics Env Environment Client."""
 
 from typing import Dict
 
@@ -12,21 +12,21 @@ from openenv.core import EnvClient
 from openenv.core.client_types import StepResult
 from openenv.core.env_server.types import State
 
-from .models import LogiChainAction, LogiChainObservation
+from logistics_env.models import LogiChainAction, LogiChainObservation
 
 
-class HackathonEnv(
+class LogisticsEnv(
     EnvClient[LogiChainAction, LogiChainObservation, State]
 ):
     """
-    Client for the Hackathon Env Environment.
+    Client for the Logistics Env Environment.
 
     This client maintains a persistent WebSocket connection to the environment server,
     enabling efficient multi-step interactions with lower latency.
     Each client instance has its own dedicated environment session on the server.
 
     Example:
-        >>> with HackathonEnv(base_url="http://localhost:8000") as client:
+        >>> with LogisticsEnv(base_url="http://localhost:8000") as client:
         ...     result = client.reset()
         ...     print(result.observation.dashboard_text)
         ...

@@ -1,5 +1,5 @@
 spec_version: 1
-name: hackathon_env
+name: logistics_env
 type: space
 runtime: fastapi
 app: server.app:app

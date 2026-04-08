@@ -1,255 +1,323 @@
 ---
-title: Hackathon Env Environment Server
-emoji: 🎞️
-colorFrom: red
-colorTo: yellow
+title: Logistics Env Environment Server
+emoji: 🚚
+colorFrom: blue
+colorTo: green
 sdk: docker
 pinned: false
 app_port: 8000
 base_path: /web
 tags:
   - openenv
+  - logistics
+  - reinforcement-learning
 ---
 
-# Hackathon Env Environment
+# Logistics Env Environment
 
-A simple test environment that echoes back messages. Perfect for testing the env APIs as well as demonstrating environment usage patterns.
+A logistics chain management environment for reinforcement learning. The agent manages a fleet of drivers delivering orders across a city network with dynamic order spawning, traffic conditions, and deadline constraints.
 
-## Quick Start
+## Overview
 
-The simplest way to use the Hackathon Env environment is through the `HackathonEnv` class:
+The Logistics Env simulates a real-world delivery operation where:
 
-```python
-from hackathon_env import HackathonAction, HackathonEnv
+- **5 drivers** start at the central hub and can be assigned to pending orders
+- **Orders** spawn dynamically with pickup/dropoff locations and deadlines
+- **Network** consists of 12 nodes (hub, warehouses, zones, customer areas) connected by 18 bidirectional roads
+- **Traffic** conditions change randomly, affecting travel times
+- **Goal**: Deliver as many orders as possible before their deadlines expire
 
-try:
-    # Create environment from Docker image
-    hackathon_envenv = HackathonEnv.from_docker_image("hackathon_env-env:latest")
+## Environment Description
 
-    # Reset
-    result = hackathon_envenv.reset()
-    print(f"Reset: {result.observation.echoed_message}")
+### Network Topology
 
-    # Send multiple messages
-    messages = ["Hello, World!", "Testing echo", "Final message"]
-
-    for msg in messages:
-        result = hackathon_envenv.step(HackathonAction(message=msg))
-        print(f"Sent: '{msg}'")
-        print(f"  → Echoed: '{result.observation.echoed_message}'")
-        print(f"  → Length: {result.observation.message_length}")
-        print(f"  → Reward: {result.reward}")
-
-finally:
-    # Always clean up
-    hackathon_envenv.close()
+```
+        C1 (customer)
+         |
+        Z1 (zone)
+       /   \
+      W1---Z5---W2
+     /      |     \
+    Z4-----HUB----Z2
+     \      |      \
+      C4   Z3      C2
+            |
+           C3
 ```
 
-That's it! The `HackathonEnv.from_docker_image()` method handles:
-- Starting the Docker container
-- Waiting for the server to be ready
-- Connecting to the environment
-- Container cleanup when you call `close()`
+- **12 nodes**: 1 hub, 2 warehouses, 5 zones, 4 customer areas
+- **18 bidirectional roads** with varying distances and capacities
+- **Traffic multipliers** affect shortest path costs (Dijkstra's algorithm)
 
-## Building the Docker Image
+### Simulation Mechanics
 
-Before using the environment, you need to build the Docker image:
+| Mechanic | Description |
+|----------|-------------|
+| **Time advance** | Every `step()` call advances time by 1 tick |
+| **Driver movement** | Drivers move 1 unit toward destination per step |
+| **Order deadlines** | Orders fail immediately when `time_step > deadline` |
+| **New orders** | 20% chance per step to spawn 1-2 new orders |
+| **Traffic spikes** | 15% chance per step for 1.3x traffic multiplier |
+| **Episode end** | When all orders resolved or max steps reached |
+
+## Action Space
+
+The agent uses `LogiChainAction` with MCP-style tool calls:
+
+```python
+class LogiChainAction(Action):
+    type: Literal["call_tool", "list_tools"]
+    tool_name: str
+    arguments: Dict[str, Any]
+```
+
+### Available Tools
+
+| Tool | Arguments | Purpose |
+|------|-----------|---------|
+| `assign_order` | `order_id`, `driver_id` | Assign a pending order to a driver |
+| `reroute_driver` | `driver_id` | Reroute driver to their order's dropoff |
+| `delay_order` | `order_id` | Extend deadline by 3 steps |
+| `escalate_order` | `order_id` | Extend deadline by 5 steps (higher cost) |
+| `query_driver` | `driver_id` | Get driver status and location |
+| `query_order` | `order_id` | Get order status and details |
+| `query_network` | (none) | Get network topology and traffic |
+
+### Example Actions
+
+```python
+# Query network state
+LogiChainAction(type="call_tool", tool_name="query_network", arguments={})
+
+# Assign order O0 to driver D0
+LogiChainAction(type="call_tool", tool_name="assign_order", 
+                arguments={"order_id": "O0", "driver_id": "D0"})
+
+# Query driver status
+LogiChainAction(type="call_tool", tool_name="query_driver",
+                arguments={"driver_id": "D0"})
+```
+
+## Observation Space
+
+### LogiChainObservation (from `reset()`)
+
+Returned when the environment is reset:
+
+```python
+class LogiChainObservation(Observation):
+    dashboard_text: str      # Current state of drivers and orders
+    alerts: List[str]        # Active alerts (new orders, traffic)
+    available_tools: List[str]  # List of available tool names
+    episode_id: str          # Unique episode identifier
+    time_step: int           # Current simulation time
+```
+
+### LogiChainToolObservation (from `step()`)
+
+Returned after each tool call:
+
+```python
+class LogiChainToolObservation(Observation):
+    tool_name: str           # Name of the tool that was called
+    tool_result: str         # Text result from the tool
+    error_msg: Optional[str] # Error message if call failed
+    alerts: List[str]        # Active alerts
+    available_tools: List[str]
+    time_step: int
+```
+
+### LogiChainState (from `state` property)
+
+Current environment state:
+
+```python
+class LogiChainState(State):
+    time_step: int           # Current simulation time
+    step_count: int          # Total agent actions taken
+    orders_pending: int      # Orders waiting to be assigned
+    orders_in_transit: int   # Orders being delivered
+    orders_delivered: int    # Successfully delivered orders
+    orders_failed: int       # Failed/expired orders
+    on_time_deliveries: int  # Orders delivered before deadline
+```
+
+## Tasks
+
+The environment includes 5 tasks with different objectives:
+
+| Task | Difficulty | Objective | Time Limit |
+|------|------------|-----------|------------|
+| `speed_run` | Very Easy | Deliver as many orders as possible quickly | 20 steps |
+| `quick_delivery` | Easy | Deliver orders before they pile up | 30 steps |
+| `on_time_efficiency` | Medium | Maximize on-time deliveries | All resolved |
+| `deadline_priority` | Hard | Handle tight-deadline orders first | All resolved |
+| `throughput_master` | Very Hard | High volume + on-time efficiency | All resolved |
+
+## Reward Structure
+
+### Terminal Rewards
+
+| Event | Reward |
+|-------|--------|
+| Order delivered on time | +1.0 |
+| Order delivered late | +0.5 |
+| Order failed (deadline exceeded) | -0.5 |
+
+### Shaping Rewards
+
+| Action | Reward |
+|--------|--------|
+| Query (driver/order/network) | +0.01 |
+| Successful assignment | +0.02 |
+| Successful reroute | +0.02 |
+| Delay order | -0.02 |
+| Escalate order | -0.05 |
+| Invalid action | -0.05 |
+
+### No-Progress Penalty
+
+- After 10 steps without progress (delivery or assignment): -0.05 per step
+- Episode ends after 50 steps without progress
+
+## Setup Instructions
+
+### Prerequisites
+
+- Python 3.10+
+- Docker
+- `uv` package manager
+
+### Local Development
 
 ```bash
-# From project root
-docker build -t hackathon_env-env:latest -f server/Dockerfile .
+# Clone the repository
+git clone https://github.com/Steamed-Bum-Invasion/logistics_env.git
+cd logistics_env
+
+# Install dependencies
+uv sync
+
+# Run the server locally
+uvicorn server.app:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Docker Build
+
+```bash
+# Build the Docker image
+docker build -t logistics-env:latest -f server/Dockerfile .
+```
+
+### Running Inference
+
+```bash
+# Set environment variables
+export HF_TOKEN="your-huggingface-token"
+export MODEL_NAME="Qwen/Qwen2.5-7B-Instruct"
+export API_BASE_URL="https://router.huggingface.co/v1"
+
+# Run inference
+uv run python inference.py
+```
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `HF_TOKEN` | Yes | HuggingFace API token |
+| `MODEL_NAME` | Yes | Model identifier for inference |
+| `API_BASE_URL` | Yes | LLM API endpoint |
+| `LOCAL_IMAGE_NAME` | No | Docker image name (default: `logistics-env:latest`) |
+
+## Usage Examples
+
+### Basic Usage
+
+```python
+from logistics_env import LogisticsEnv
+from logistics_env.models import LogiChainAction
+
+async def run_episode():
+    # Create environment from Docker image
+    env = await LogisticsEnv.from_docker_image("logistics-env:latest")
+    
+    try:
+        # Reset environment
+        result = await env.reset(task_name="quick_delivery")
+        print(f"Dashboard:\n{result.observation.dashboard_text}")
+        
+        # Query network
+        action = LogiChainAction(type="call_tool", tool_name="query_network", arguments={})
+        result = await env.step(action)
+        print(f"Network:\n{result.observation.tool_result}")
+        
+        # Assign order
+        action = LogiChainAction(
+            type="call_tool", 
+            tool_name="assign_order",
+            arguments={"order_id": "O0", "driver_id": "D0"}
+        )
+        result = await env.step(action)
+        print(f"Result: {result.observation.tool_result}")
+        
+    finally:
+        await env.close()
+```
+
+### Context Manager
+
+```python
+async with LogisticsEnv.from_docker_image("logistics-env:latest") as env:
+    result = await env.reset()
+    # ... run episode
+```
+
+## Project Structure
+
+```
+logistics_env/
+├── __init__.py              # Module exports (LogisticsEnv)
+├── client.py                # LogisticsEnv WebSocket client
+├── models.py                # Action and Observation models
+├── inference.py             # LLM inference script
+├── openenv.yaml             # OpenEnv manifest
+├── pyproject.toml           # Project metadata and dependencies
+├── README.md                # This file
+├── AGENTS.md                # Agent development guide
+└── server/
+    ├── __init__.py          # Server module exports
+    ├── app.py               # FastAPI application
+    ├── logistics_environment.py  # Core environment logic
+    ├── tools.py             # Tool implementations
+    ├── rewards.py           # Reward computation
+    ├── grader.py            # Task grading logic
+    ├── network_graph.py     # NetworkX-based network
+    ├── Dockerfile           # Container image definition
+    ├── requirements.txt     # Python dependencies
+    ├── reward_config.yaml   # Reward configuration
+    └── task_config.yaml     # Task definitions
 ```
 
 ## Deploying to Hugging Face Spaces
 
-You can easily deploy your OpenEnv environment to Hugging Face Spaces using the `openenv push` command:
-
 ```bash
-# From the environment directory (where openenv.yaml is located)
+# From the environment directory
 openenv push
 
-# Or specify options
-openenv push --namespace my-org --private
-```
-
-The `openenv push` command will:
-1. Validate that the directory is an OpenEnv environment (checks for `openenv.yaml`)
-2. Prepare a custom build for Hugging Face Docker space (enables web interface)
-3. Upload to Hugging Face (ensuring you're logged in)
-
-### Prerequisites
-
-- Authenticate with Hugging Face: The command will prompt for login if not already authenticated
-
-### Options
-
-- `--directory`, `-d`: Directory containing the OpenEnv environment (defaults to current directory)
-- `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
-- `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
-- `--private`: Deploy the space as private (default: public)
-
-### Examples
-
-```bash
-# Push to your personal namespace (defaults to username/env-name from openenv.yaml)
-openenv push
-
-# Push to a specific repository
-openenv push --repo-id my-org/my-env
-
-# Push with a custom base image
-openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest
-
-# Push as a private space
-openenv push --private
-
-# Combine options
-openenv push --repo-id my-org/my-env --base-image custom-base:latest --private
+# Or with options
+openenv push --repo-id my-org/logistics-env --public
 ```
 
 After deployment, your space will be available at:
 `https://huggingface.co/spaces/<repo-id>`
 
 The deployed space includes:
-- **Web Interface** at `/web` - Interactive UI for exploring the environment
-- **API Documentation** at `/docs` - Full OpenAPI/Swagger interface
-- **Health Check** at `/health` - Container health monitoring
-- **WebSocket** at `/ws` - Persistent session endpoint for low-latency interactions
+- **Web Interface** at `/web` - Interactive UI
+- **API Documentation** at `/docs` - OpenAPI/Swagger
+- **Health Check** at `/health`
+- **WebSocket** at `/ws` - Persistent sessions
 
-## Environment Details
+## License
 
-### Action
-**HackathonAction**: Contains a single field
-- `message` (str) - The message to echo back
-
-### Observation
-**HackathonObservation**: Contains the echo response and metadata
-- `echoed_message` (str) - The message echoed back
-- `message_length` (int) - Length of the message
-- `reward` (float) - Reward based on message length (length × 0.1)
-- `done` (bool) - Always False for echo environment
-- `metadata` (dict) - Additional info like step count
-
-### Reward
-The reward is calculated as: `message_length × 0.1`
-- "Hi" → reward: 0.2
-- "Hello, World!" → reward: 1.3
-- Empty message → reward: 0.0
-
-## Advanced Usage
-
-### Connecting to an Existing Server
-
-If you already have a Hackathon Env environment server running, you can connect directly:
-
-```python
-from hackathon_env import HackathonEnv
-
-# Connect to existing server
-hackathon_envenv = HackathonEnv(base_url="<ENV_HTTP_URL_HERE>")
-
-# Use as normal
-result = hackathon_envenv.reset()
-result = hackathon_envenv.step(HackathonAction(message="Hello!"))
-```
-
-Note: When connecting to an existing server, `hackathon_envenv.close()` will NOT stop the server.
-
-### Using the Context Manager
-
-The client supports context manager usage for automatic connection management:
-
-```python
-from hackathon_env import HackathonAction, HackathonEnv
-
-# Connect with context manager (auto-connects and closes)
-with HackathonEnv(base_url="http://localhost:8000") as env:
-    result = env.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-    # Multiple steps with low latency
-    for msg in ["Hello", "World", "!"]:
-        result = env.step(HackathonAction(message=msg))
-        print(f"Echoed: {result.observation.echoed_message}")
-```
-
-The client uses WebSocket connections for:
-- **Lower latency**: No HTTP connection overhead per request
-- **Persistent session**: Server maintains your environment state
-- **Efficient for episodes**: Better for many sequential steps
-
-### Concurrent WebSocket Sessions
-
-The server supports multiple concurrent WebSocket connections. To enable this,
-modify `server/app.py` to use factory mode:
-
-```python
-# In server/app.py - use factory mode for concurrent sessions
-app = create_app(
-    HackathonEnvironment,  # Pass class, not instance
-    HackathonAction,
-    HackathonObservation,
-    max_concurrent_envs=4,  # Allow 4 concurrent sessions
-)
-```
-
-Then multiple clients can connect simultaneously:
-
-```python
-from hackathon_env import HackathonAction, HackathonEnv
-from concurrent.futures import ThreadPoolExecutor
-
-def run_episode(client_id: int):
-    with HackathonEnv(base_url="http://localhost:8000") as env:
-        result = env.reset()
-        for i in range(10):
-            result = env.step(HackathonAction(message=f"Client {client_id}, step {i}"))
-        return client_id, result.observation.message_length
-
-# Run 4 episodes concurrently
-with ThreadPoolExecutor(max_workers=4) as executor:
-    results = list(executor.map(run_episode, range(4)))
-```
-
-## Development & Testing
-
-### Direct Environment Testing
-
-Test the environment logic directly without starting the HTTP server:
-
-```bash
-# From the server directory
-python3 server/hackathon_env_environment.py
-```
-
-This verifies that:
-- Environment resets correctly
-- Step executes actions properly
-- State tracking works
-- Rewards are calculated correctly
-
-### Running Locally
-
-Run the server locally for development:
-
-```bash
-uvicorn server.app:app --reload
-```
-
-## Project Structure
-
-```
-hackathon_env/
-├── .dockerignore         # Docker build exclusions
-├── __init__.py            # Module exports
-├── README.md              # This file
-├── openenv.yaml           # OpenEnv manifest
-├── pyproject.toml         # Project metadata and dependencies
-├── uv.lock                # Locked dependencies (generated)
-├── client.py              # HackathonEnv client
-├── models.py              # Action and Observation models
-└── server/
-    ├── __init__.py        # Server module exports
-    ├── hackathon_env_environment.py  # Core environment logic
-    ├── app.py             # FastAPI application (HTTP + WebSocket endpoints)
-    └── Dockerfile         # Container image definition
-```
+BSD-style license. See LICENSE file for details.

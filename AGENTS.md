@@ -1,4 +1,4 @@
-# AGENTS.md - hackathon_env
+# AGENTS.md - logistics_env
 
 ## Commands
 
@@ -6,6 +6,7 @@
 uv sync                          # install deps
 uvicorn server.app:app --reload  # run dev server on :8000
 uv run --project . server        # run via pyproject entry point
+uv run python inference.py       # run inference with LLM
 ```
 
 ## Architecture
@@ -13,13 +14,17 @@ uv run --project . server        # run via pyproject entry point
 Logistics chain management environment using **MCP (FastMCP) tool pattern**.
 
 ```
-hackathon_env/
+logistics_env/
 ├── models.py              # LogiChainObservation, LogiChainToolObservation, LogiChainState
-├── client.py              # HackathonEnv WebSocket client
-├── server/
-│   ├── app.py             # FastAPI app (uses base Action, not custom)
-│   ├── hackathon_env_environment.py  # LogiChainEnvironment + _LogiChainMCPDelegate
-│   └── network_graph.py   # NetworkX-based logistics network (12 nodes, 18 edges)
+├── client.py              # LogisticsEnv WebSocket client
+├── inference.py           # LLM inference script
+└── server/
+    ├── app.py             # FastAPI app (uses base Action, not custom)
+    ├── logistics_environment.py  # LogiChainEnvironment + _LogiChainMCPDelegate
+    ├── tools.py           # Tool implementations (assign_order, query_*, etc.)
+    ├── rewards.py         # Reward computation logic
+    ├── grader.py          # Task grading logic
+    └── network_graph.py  # NetworkX-based logistics network (12 nodes, 18 edges)
 ```
 
 ## MCP Pattern
@@ -70,3 +75,13 @@ hackathon_env/
 | Order delivered on time | +1.0 |
 | Order delivered late | +0.5 |
 | Order failed (deadline exceeded) | -0.5 |
+
+## Tasks
+
+| Task | Time Limit | Objective |
+|------|------------|-----------|
+| speed_run | 20 steps | Max deliveries quickly |
+| quick_delivery | 30 steps | Deliver before pile-up |
+| on_time_efficiency | All resolved | Maximize on-time |
+| deadline_priority | All resolved | Handle tight deadlines |
+| throughput_master | All resolved | High volume + efficiency |

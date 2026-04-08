@@ -15,14 +15,12 @@ FROM ${BASE_IMAGE} AS builder
 
 WORKDIR /app
 
-# Ensure git is available (required for installing dependencies from VCS)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends git && \
     rm -rf /var/lib/apt/lists/*
 
-# Build argument to control whether we're building standalone or in-repo
 ARG BUILD_MODE=in-repo
-ARG ENV_NAME=hackathon_env
+ARG ENV_NAME=logistics_env
 
 # Copy environment code (always at root of build context)
 COPY . /app/env
