@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 try:
-    from ..models import LogiChainState
-except ImportError:
+    from hackathon_env.models import LogiChainState
+except ModuleNotFoundError:
     from models import LogiChainState
 
 

@@ -33,16 +33,16 @@ from openenv.core.env_server.mcp_types import (
 from openenv.core.env_server.types import Observation, Action
 
 try:
-    from ..models import (
+    from hackathon_env.models import (
         AVAILABLE_TOOLS,
         LogiChainAction,
         LogiChainState,
         LogiChainObservation,
         LogiChainToolObservation,
     )
-    from .network_graph import NetworkGraph
-    from .grader import TaskGrader
-except ImportError:
+    from hackathon_env.server.network_graph import NetworkGraph
+    from hackathon_env.server.grader import TaskGrader
+except ModuleNotFoundError:
     from models import (
         AVAILABLE_TOOLS,
         LogiChainAction,
@@ -56,7 +56,8 @@ except ImportError:
 
 def _load_yaml(filename: str) -> dict:
     """Load YAML config from server directory."""
-    server_dir = Path(__file__).parent
+    import os
+    server_dir = Path(os.environ.get("SERVER_DIR", "/app/env/server"))
     config_path = server_dir / filename
     with open(config_path) as f:
         return yaml.safe_load(f)

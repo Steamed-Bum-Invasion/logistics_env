@@ -36,8 +36,8 @@ except Exception as e:  # pragma: no cover
     ) from e
 
 try:
-    from ..models import LogiChainAction, LogiChainObservation
-    from .hackathon_env_environment import LogiChainEnvironment
+    from hackathon_env.models import LogiChainAction, LogiChainObservation
+    from hackathon_env.server.hackathon_env_environment import LogiChainEnvironment
 except ModuleNotFoundError:
     from models import LogiChainAction, LogiChainObservation
     from server.hackathon_env_environment import LogiChainEnvironment
@@ -76,9 +76,4 @@ def main(host: str = "0.0.0.0", port: int = 8000):
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=8000)
-    args = parser.parse_args()
-    main(port=args.port)
+    main()

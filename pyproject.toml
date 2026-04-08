@@ -43,3 +43,6 @@ include-package-data = true
 packages = ["hackathon_env", "hackathon_env.server"]
 package-dir = { "hackathon_env" = ".", "hackathon_env.server" = "server" }
 
+[tool.setuptools.package-data]
+"hackathon_env.server" = ["*.yaml"]
+
