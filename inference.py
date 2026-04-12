@@ -20,9 +20,13 @@ STDOUT FORMAT:
 """
 
 import asyncio
+import json
 import os
+import re
+import subprocess
 import sys
 import textwrap
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -103,8 +107,6 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> No
 
 def parse_tool_call(response_text: str) -> Optional[Dict]:
     """Parse the LLM response to extract tool call."""
-    import json
-
     text = response_text.strip()
 
     if text.startswith("```json"):
@@ -122,8 +124,6 @@ def parse_tool_call(response_text: str) -> Optional[Dict]:
             return data
     except json.JSONDecodeError:
         pass
-
-    import re
 
     match = re.search(r'\{[^{}]*"tool_name"[^{}]*"arguments"[^{}]*\}', text)
     if match:
@@ -184,12 +184,46 @@ def get_model_action(
         return '{"tool_name": "query_network", "arguments": {}}'
 
 
+def check_docker_image(image_name: str) -> bool:
+    """Check if Docker image exists locally."""
+    try:
+        result = subprocess.run(
+            ["docker", "image", "inspect", image_name],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return result.returncode == 0
+    except Exception as e:
+        print(f"[DEBUG] Failed to check Docker image: {e}", flush=True)
+        return False
+
+
+def build_docker_image(image_name: str) -> bool:
+    """Build Docker image if it doesn't exist."""
+    try:
+        print(f"[DEBUG] Building Docker image: {image_name}", flush=True)
+        result = subprocess.run(
+            ["docker", "build", "-t", image_name, "."],
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if result.returncode != 0:
+            print(f"[DEBUG] Docker build failed: {result.stderr}", flush=True)
+            return False
+        print(f"[DEBUG] Docker image built successfully", flush=True)
+        return True
+    except Exception as e:
+        print(f"[DEBUG] Failed to build Docker image: {e}", flush=True)
+        return False
+
+
 async def run_task(client: OpenAI, task_name: str) -> Dict:
     """Run a single task and return results."""
     log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
 
-    env = await LogisticsEnv.from_docker_image(LOCAL_IMAGE_NAME)
-
+    env = None
     history: List[str] = []
     rewards: List[float] = []
     steps_taken = 0
@@ -197,63 +231,102 @@ async def run_task(client: OpenAI, task_name: str) -> Dict:
     success = False
 
     try:
+        # Check if Docker image exists, build if needed
+        if not check_docker_image(LOCAL_IMAGE_NAME):
+            print(f"[DEBUG] Docker image not found, attempting to build...", flush=True)
+            if not build_docker_image(LOCAL_IMAGE_NAME):
+                print(f"[ERROR] Failed to build Docker image", flush=True)
+                log_end(success=False, steps=0, score=0.0, rewards=[])
+                return {
+                    "task": task_name,
+                    "success": False,
+                    "steps": 0,
+                    "score": 0.0,
+                    "rewards": [],
+                }
+
+        # Create environment with retry logic
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                env = await LogisticsEnv.from_docker_image(LOCAL_IMAGE_NAME)
+                break
+            except Exception as e:
+                print(
+                    f"[DEBUG] Attempt {attempt + 1} failed to create environment: {e}",
+                    flush=True,
+                )
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                else:
+                    raise
+
         result = await env.reset(task_name=task_name)
         obs = result.observation
 
-        last_dashboard = obs.dashboard_text
-        last_alerts = obs.alerts
-        last_available_tools = obs.available_tools
+        last_dashboard = getattr(obs, "dashboard_text", "")
+        last_alerts = getattr(obs, "alerts", [])
+        last_available_tools = getattr(obs, "available_tools", [])
         last_reward = 0.0
 
         for step in range(1, MAX_STEPS + 1):
             if result.done:
                 break
 
-            response_text = get_model_action(
-                client, last_dashboard, last_alerts, last_available_tools, history
-            )
-
-            tool_call = parse_tool_call(response_text)
-
-            if tool_call:
-                action = LogiChainAction(
-                    type="call_tool",
-                    tool_name=tool_call.get("tool_name", ""),
-                    arguments=tool_call.get("arguments", {}),
+            try:
+                response_text = get_model_action(
+                    client, last_dashboard, last_alerts, last_available_tools, history
                 )
-                action_str = (
-                    f'{tool_call.get("tool_name")}({tool_call.get("arguments", {})})'
+
+                tool_call = parse_tool_call(response_text)
+
+                if tool_call:
+                    action = LogiChainAction(
+                        type="call_tool",
+                        tool_name=tool_call.get("tool_name", ""),
+                        arguments=tool_call.get("arguments", {}),
+                    )
+                    action_str = f'{tool_call.get("tool_name")}({tool_call.get("arguments", {})})'
+                else:
+                    action = LogiChainAction(
+                        type="call_tool", tool_name="query_network", arguments={}
+                    )
+                    action_str = "query_network({})"
+
+                result = await env.step(action)
+                obs = result.observation
+
+                reward = result.reward or 0.0
+                done = result.done
+                error = getattr(obs, "error_msg", None)
+
+                rewards.append(reward)
+                steps_taken = step
+                last_reward = reward
+                last_dashboard = (
+                    getattr(obs, "tool_result", "")
+                    if hasattr(obs, "tool_result")
+                    else ""
                 )
-            else:
-                action = LogiChainAction(
-                    type="call_tool", tool_name="query_network", arguments={}
+                last_alerts = getattr(obs, "alerts", [])
+                last_available_tools = getattr(obs, "available_tools", [])
+
+                log_step(
+                    step=step, action=action_str, reward=reward, done=done, error=error
                 )
-                action_str = "query_network({})"
 
-            result = await env.step(action)
-            obs = result.observation
+                history.append(f"Step {step}: {action_str} -> reward {reward:+.2f}")
 
-            reward = result.reward or 0.0
-            done = result.done
-            error = obs.error_msg if hasattr(obs, "error_msg") else None
+                if done:
+                    break
 
-            rewards.append(reward)
-            steps_taken = step
-            last_reward = reward
-            last_dashboard = obs.tool_result if hasattr(obs, "tool_result") else ""
-            last_alerts = obs.alerts if hasattr(obs, "alerts") else []
-            last_available_tools = (
-                obs.available_tools if hasattr(obs, "available_tools") else []
-            )
-
-            log_step(
-                step=step, action=action_str, reward=reward, done=done, error=error
-            )
-
-            history.append(f"Step {step}: {action_str} -> reward {reward:+.2f}")
-
-            if done:
-                break
+            except Exception as e:
+                print(f"[DEBUG] Step {step} failed: {e}", flush=True)
+                rewards.append(-0.05)
+                steps_taken = step
+                log_step(
+                    step=step, action="error", reward=-0.05, done=False, error=str(e)
+                )
 
         max_possible_reward = MAX_STEPS * 1.5
         score = sum(rewards) / max_possible_reward if max_possible_reward > 0 else 0.0
@@ -261,12 +334,16 @@ async def run_task(client: OpenAI, task_name: str) -> Dict:
         success = score >= 0.1
 
     except Exception as e:
-        print(f"[DEBUG] Task {task_name} failed with error: {e}", flush=True)
+        print(f"[ERROR] Task {task_name} failed with error: {e}", flush=True)
+        import traceback
+
+        traceback.print_exc()
     finally:
-        try:
-            await env.close()
-        except Exception as e:
-            print(f"[DEBUG] env.close() error: {e}", flush=True)
+        if env is not None:
+            try:
+                await env.close()
+            except Exception as e:
+                print(f"[DEBUG] env.close() error: {e}", flush=True)
 
     log_end(success=success, steps=steps_taken, score=score, rewards=rewards)
     return {
@@ -296,8 +373,20 @@ async def main() -> None:
 
     results = []
     for task in TASKS:
-        result = await run_task(client, task)
-        results.append(result)
+        try:
+            result = await run_task(client, task)
+            results.append(result)
+        except Exception as e:
+            print(f"[ERROR] Failed to run task {task}: {e}", flush=True)
+            results.append(
+                {
+                    "task": task,
+                    "success": False,
+                    "steps": 0,
+                    "score": 0.0,
+                    "rewards": [],
+                }
+            )
 
     print("\n=== SUMMARY ===", flush=True)
     for r in results:
