@@ -42,7 +42,7 @@ MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
 
 BENCHMARK = "logistics_env"
 MAX_STEPS = 50
-TEMPERATURE = 0.7
+TEMPERATURE = 0.1
 MAX_TOKENS = 512
 
 TASKS = [
