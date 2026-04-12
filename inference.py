@@ -6,9 +6,9 @@ This script runs inference on the LogiChain environment using an LLM.
 
 Requirements:
 - Before submitting, ensure the following variables are defined in your environment:
-    API_BASE_URL   The API endpoint for the LLM.
+    API_BASE_URL   The API endpoint for the LLM (provided by submission system).
+    API_KEY        Your API key (provided by submission system).
     MODEL_NAME     The model identifier to use for inference.
-    HF_TOKEN       Your Hugging Face / API key.
 
 The inference script must be named `inference.py` and placed in the root directory.
 Participants must use OpenAI Client for all LLM calls.
@@ -35,8 +35,8 @@ from openai import OpenAI
 from logistics_env import LogisticsEnv
 from logistics_env.models import LogiChainAction
 
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")
+API_BASE_URL = os.getenv("API_BASE_URL")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME", "logistics-env:latest")
 
@@ -358,7 +358,7 @@ async def run_task(client: OpenAI, task_name: str) -> Dict:
 async def main() -> None:
     """Main entry point."""
     if not API_KEY:
-        print("ERROR: HF_TOKEN or API_KEY must be set", flush=True)
+        print("ERROR: API_KEY must be set", flush=True)
         return
 
     if not API_BASE_URL:
