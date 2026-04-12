@@ -1,2 +1,4 @@
 openenv_logistics_env.egg-info/
 __pycache__/
+.env
+.venv/

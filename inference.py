@@ -4,14 +4,18 @@ Inference Script for Logistics Env
 
 This script runs inference on the LogiChain environment using an LLM.
 
-Requirements:
-- Before submitting, ensure the following variables are defined in your environment:
-    API_BASE_URL   The API endpoint for the LLM (provided by submission system).
-    API_KEY        Your API key (provided by submission system).
-    MODEL_NAME     The model identifier to use for inference.
+Environment Variables (all optional for local dev, required for submission):
+    API_KEY        Your API key (or HF_TOKEN or OPENROUTER_API_KEY for local dev)
+    API_BASE_URL   The API endpoint for the LLM (defaults to OpenRouter)
+    MODEL_NAME     The model identifier to use (defaults to qwen/qwen-2.5-72b-instruct)
 
-The inference script must be named `inference.py` and placed in the root directory.
-Participants must use OpenAI Client for all LLM calls.
+For local development:
+    1. Copy .env.example to .env
+    2. Add your OPENROUTER_API_KEY
+    3. Run: python inference.py
+
+For submission:
+    The submission system will inject API_KEY and API_BASE_URL automatically.
 
 STDOUT FORMAT:
     [START] task=<task_name> env=<benchmark> model=<model_name>
@@ -30,6 +34,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from dotenv import load_dotenv
 from openai import OpenAI
 
 from logistics_env import LogisticsEnv
@@ -353,22 +358,18 @@ async def run_task(client: OpenAI, task_name: str, model_name: str, image_name: 
 
 async def main() -> None:
     """Main entry point."""
-    # Read environment variables at runtime (not at import time)
-    API_KEY = os.environ.get("API_KEY") or os.environ.get("HF_TOKEN")
-    API_BASE_URL = os.environ.get("API_BASE_URL")
-    MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+    # Load .env file for local development (submission system injects vars directly)
+    load_dotenv()
+
+    # Read environment variables with defaults
+    # Submission system will override these with their proxy URL and key
+    API_KEY = os.environ.get("API_KEY") or os.environ.get("HF_TOKEN") or os.environ.get("OPENROUTER_API_KEY")
+    API_BASE_URL = os.environ.get("API_BASE_URL", "https://openrouter.ai/api/v1")
+    MODEL_NAME = os.environ.get("MODEL_NAME", "qwen/qwen-2.5-72b-instruct")
     LOCAL_IMAGE_NAME = os.environ.get("LOCAL_IMAGE_NAME", "logistics-env:latest")
 
     if not API_KEY:
-        print("ERROR: API_KEY must be set", flush=True)
-        return
-
-    if not API_BASE_URL:
-        print("ERROR: API_BASE_URL must be set", flush=True)
-        return
-
-    if not MODEL_NAME:
-        print("ERROR: MODEL_NAME must be set", flush=True)
+        print("ERROR: API_KEY (or HF_TOKEN or OPENROUTER_API_KEY) must be set", flush=True)
         return
 
     print(f"[DEBUG] Using API_BASE_URL: {API_BASE_URL}", flush=True)
