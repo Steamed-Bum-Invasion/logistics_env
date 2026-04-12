@@ -35,11 +35,6 @@ from openai import OpenAI
 from logistics_env import LogisticsEnv
 from logistics_env.models import LogiChainAction
 
-API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")
-API_BASE_URL = os.getenv("API_BASE_URL")
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME", "logistics-env:latest")
-
 BENCHMARK = "logistics_env"
 MAX_STEPS = 50
 TEMPERATURE = 0.7
@@ -138,6 +133,7 @@ def parse_tool_call(response_text: str) -> Optional[Dict]:
 
 def get_model_action(
     client: OpenAI,
+    model_name: str,
     dashboard: str,
     alerts: List[str],
     available_tools: List[str],
@@ -163,7 +159,7 @@ def get_model_action(
 
     try:
         completion = client.chat.completions.create(
-            model=MODEL_NAME,
+            model=model_name,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
@@ -219,9 +215,9 @@ def build_docker_image(image_name: str) -> bool:
         return False
 
 
-async def run_task(client: OpenAI, task_name: str) -> Dict:
+async def run_task(client: OpenAI, task_name: str, model_name: str, image_name: str) -> Dict:
     """Run a single task and return results."""
-    log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
+    log_start(task=task_name, env=BENCHMARK, model=model_name)
 
     env = None
     history: List[str] = []
@@ -232,9 +228,9 @@ async def run_task(client: OpenAI, task_name: str) -> Dict:
 
     try:
         # Check if Docker image exists, build if needed
-        if not check_docker_image(LOCAL_IMAGE_NAME):
+        if not check_docker_image(image_name):
             print(f"[DEBUG] Docker image not found, attempting to build...", flush=True)
-            if not build_docker_image(LOCAL_IMAGE_NAME):
+            if not build_docker_image(image_name):
                 print(f"[ERROR] Failed to build Docker image", flush=True)
                 log_end(success=False, steps=0, score=0.0, rewards=[])
                 return {
@@ -249,7 +245,7 @@ async def run_task(client: OpenAI, task_name: str) -> Dict:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                env = await LogisticsEnv.from_docker_image(LOCAL_IMAGE_NAME)
+                env = await LogisticsEnv.from_docker_image(image_name)
                 break
             except Exception as e:
                 print(
@@ -275,7 +271,7 @@ async def run_task(client: OpenAI, task_name: str) -> Dict:
 
             try:
                 response_text = get_model_action(
-                    client, last_dashboard, last_alerts, last_available_tools, history
+                    client, model_name, last_dashboard, last_alerts, last_available_tools, history
                 )
 
                 tool_call = parse_tool_call(response_text)
@@ -357,6 +353,12 @@ async def run_task(client: OpenAI, task_name: str) -> Dict:
 
 async def main() -> None:
     """Main entry point."""
+    # Read environment variables at runtime (not at import time)
+    API_KEY = os.environ.get("API_KEY") or os.environ.get("HF_TOKEN")
+    API_BASE_URL = os.environ.get("API_BASE_URL")
+    MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+    LOCAL_IMAGE_NAME = os.environ.get("LOCAL_IMAGE_NAME", "logistics-env:latest")
+
     if not API_KEY:
         print("ERROR: API_KEY must be set", flush=True)
         return
@@ -369,12 +371,15 @@ async def main() -> None:
         print("ERROR: MODEL_NAME must be set", flush=True)
         return
 
+    print(f"[DEBUG] Using API_BASE_URL: {API_BASE_URL}", flush=True)
+    print(f"[DEBUG] Using MODEL_NAME: {MODEL_NAME}", flush=True)
+
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
     results = []
     for task in TASKS:
         try:
-            result = await run_task(client, task)
+            result = await run_task(client, task, MODEL_NAME, LOCAL_IMAGE_NAME)
             results.append(result)
         except Exception as e:
             print(f"[ERROR] Failed to run task {task}: {e}", flush=True)
