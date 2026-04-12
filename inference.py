@@ -210,7 +210,12 @@ async def run_task(client: OpenAI, task_name: str) -> Dict:
                 break
 
             response_text = get_model_action(
-                client, MODEL_NAME, last_dashboard, last_alerts, last_available_tools, history
+                client,
+                MODEL_NAME,
+                last_dashboard,
+                last_alerts,
+                last_available_tools,
+                history,
             )
 
             tool_call = parse_tool_call(response_text)
@@ -221,7 +226,9 @@ async def run_task(client: OpenAI, task_name: str) -> Dict:
                     tool_name=tool_call.get("tool_name", ""),
                     arguments=tool_call.get("arguments", {}),
                 )
-                action_str = f'{tool_call.get("tool_name")}({tool_call.get("arguments", {})})'
+                action_str = (
+                    f'{tool_call.get("tool_name")}({tool_call.get("arguments", {})})'
+                )
             else:
                 action = LogiChainAction(
                     type="call_tool", tool_name="query_network", arguments={}
@@ -238,9 +245,7 @@ async def run_task(client: OpenAI, task_name: str) -> Dict:
             rewards.append(reward)
             steps_taken = step
             last_dashboard = (
-                getattr(obs, "tool_result", "")
-                if hasattr(obs, "tool_result")
-                else ""
+                getattr(obs, "tool_result", "") if hasattr(obs, "tool_result") else ""
             )
             last_alerts = getattr(obs, "alerts", [])
             last_available_tools = getattr(obs, "available_tools", [])
@@ -256,12 +261,13 @@ async def run_task(client: OpenAI, task_name: str) -> Dict:
 
         max_possible_reward = MAX_STEPS * 1.5
         score = sum(rewards) / max_possible_reward if max_possible_reward > 0 else 0.0
-        score = min(max(score, 0.0), 1.0)
+        score = min(max(score, 0.01), 0.99)
         success = score >= 0.1
 
     except Exception as e:
         print(f"[ERROR] Task {task_name} failed with error: {e}", flush=True)
         import traceback
+
         traceback.print_exc()
     finally:
         if env is not None:
