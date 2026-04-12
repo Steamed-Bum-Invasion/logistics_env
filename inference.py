@@ -34,7 +34,6 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from dotenv import load_dotenv
 from openai import OpenAI
 
 from logistics_env import LogisticsEnv
@@ -358,21 +357,10 @@ async def run_task(client: OpenAI, task_name: str, model_name: str, image_name: 
 
 async def main() -> None:
     """Main entry point."""
-    # Load .env file for local development (submission system injects vars directly)
-    load_dotenv()
-
-    # Read environment variables - submission system injects API_KEY and API_BASE_URL
-    API_KEY = os.environ.get("API_KEY")
-    API_BASE_URL = os.environ.get("API_BASE_URL")
-    MODEL_NAME = os.environ.get("MODEL_NAME", "qwen/qwen-2.5-72b-instruct")
-    LOCAL_IMAGE_NAME = os.environ.get("LOCAL_IMAGE_NAME", "logistics-env:latest")
-
-    if not API_KEY or not API_BASE_URL:
-        print("ERROR: API_KEY and API_BASE_URL must be set", flush=True)
-        return
-
-    print(f"[DEBUG] Using API_BASE_URL: {API_BASE_URL}", flush=True)
-    print(f"[DEBUG] Using MODEL_NAME: {MODEL_NAME}", flush=True)
+    API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+    API_BASE_URL = os.getenv("API_BASE_URL") or "https://router.huggingface.co/v1"
+    MODEL_NAME = os.getenv("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
+    LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME", "logistics-env:latest")
 
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
