@@ -361,15 +361,14 @@ async def main() -> None:
     # Load .env file for local development (submission system injects vars directly)
     load_dotenv()
 
-    # Read environment variables with defaults
-    # Submission system will override these with their proxy URL and key
-    API_KEY = os.environ.get("API_KEY") or os.environ.get("HF_TOKEN") or os.environ.get("OPENROUTER_API_KEY")
-    API_BASE_URL = os.environ.get("API_BASE_URL", "https://openrouter.ai/api/v1")
+    # Read environment variables - submission system injects API_KEY and API_BASE_URL
+    API_KEY = os.environ.get("API_KEY")
+    API_BASE_URL = os.environ.get("API_BASE_URL")
     MODEL_NAME = os.environ.get("MODEL_NAME", "qwen/qwen-2.5-72b-instruct")
     LOCAL_IMAGE_NAME = os.environ.get("LOCAL_IMAGE_NAME", "logistics-env:latest")
 
-    if not API_KEY:
-        print("ERROR: API_KEY (or HF_TOKEN or OPENROUTER_API_KEY) must be set", flush=True)
+    if not API_KEY or not API_BASE_URL:
+        print("ERROR: API_KEY and API_BASE_URL must be set", flush=True)
         return
 
     print(f"[DEBUG] Using API_BASE_URL: {API_BASE_URL}", flush=True)
